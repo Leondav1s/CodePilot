@@ -3,8 +3,8 @@
 
 **Claude Code 的统一桌面客户端** -- 多 Provider 支持、MCP 扩展、自定义技能、跨平台 Bridge，以及理解你项目的助手工作区。
 
-[![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/op7418/CodePilot/releases)
+[![GitHub release](https://img.shields.io/github/v/release/Leondav1s/CodePilot)](https://github.com/Leondav1s/CodePilot/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/Leondav1s/CodePilot/releases)
 [![License](https://img.shields.io/badge/license-BSL--1.1-orange)](LICENSE)
 
 [English](./README.md) | [日本語](./README_JA.md)
@@ -37,7 +37,7 @@
 
 1. 安装 Claude Code CLI：`npm install -g @anthropic-ai/claude-code`
 2. 认证：`claude login`
-3. 从 [Releases](https://github.com/op7418/CodePilot/releases) 页面下载对应平台的安装包
+3. 从 [Releases](https://github.com/Leondav1s/CodePilot/releases) 页面下载对应平台的安装包
 4. 启动 CodePilot
 
 ### 路径 B：源码构建（开发者）
@@ -49,7 +49,7 @@
 | npm | 9+（Node 18 自带） |
 
 ```bash
-git clone https://github.com/op7418/CodePilot.git
+git clone https://github.com/Leondav1s/CodePilot.git
 cd CodePilot
 npm install
 npm run dev              # 浏览器模式，访问 http://localhost:3000
@@ -116,7 +116,7 @@ npm run electron:dev     # 完整桌面应用
 | Windows | .exe (NSIS) | x64 + arm64 |
 | Linux | .AppImage / .deb / .rpm | x64 + arm64 |
 
-从 [Releases](https://github.com/op7418/CodePilot/releases) 页面下载。
+从 [Releases](https://github.com/Leondav1s/CodePilot/releases) 页面下载。
 
 macOS 构建已使用 Developer ID 证书签名，但未进行公证（notarize），因此 Gatekeeper 在首次启动时仍可能弹出提示。Windows 和 Linux 构建未签名。
 

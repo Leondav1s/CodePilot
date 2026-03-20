@@ -108,14 +108,11 @@ jobs:
         run: npm run electron:build
 
       - name: Decode signing certificate
+        if: ${{ env.HAS_CERT == 'true' }}
         env:
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
         run: |
-          if [ "${HAS_CERT}" != "true" ]; then
-            echo "::error::Missing signing certificate (MAC_CERT_P12_BASE64 secret not set)"
-            exit 1
-          fi
           printf '%s' "$MAC_CERT_P12_BASE64" | tr -d '\r\n' | base64 --decode > /tmp/cert.p12
           openssl pkcs12 -in /tmp/cert.p12 -passin pass:"$MAC_CERT_PASSWORD" -noout
           echo "Certificate decoded and validated"
@@ -125,9 +122,15 @@ jobs:
         env:
           CSC_LINK: /tmp/cert.p12
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-        run: npx electron-builder --mac --config electron-builder.yml --publish never
+        run: |
+          if [ "${HAS_CERT}" = "true" ]; then
+            npx electron-builder --mac --config electron-builder.yml --publish never
+          else
+            CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --config electron-builder.yml --publish never
+          fi
 
       - name: Verify code signature
+        if: ${{ env.HAS_CERT == 'true' }}
         run: |
           APPS=$(find release -name "CodePilot.app" -maxdepth 3)
           if [ -z "$APPS" ]; then

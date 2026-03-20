@@ -3,8 +3,8 @@
 
 **A unified desktop client for Claude Code** -- multi-provider support, MCP extensions, custom skills, cross-platform bridge, and an assistant workspace that understands your projects.
 
-[![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/op7418/CodePilot/releases)
+[![GitHub release](https://img.shields.io/github/v/release/Leondav1s/CodePilot)](https://github.com/Leondav1s/CodePilot/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/Leondav1s/CodePilot/releases)
 [![License](https://img.shields.io/badge/license-BSL--1.1-orange)](LICENSE)
 
 [中文文档](./README_CN.md) | [日本語](./README_JA.md)
@@ -37,7 +37,7 @@
 
 1. Install the Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: `claude login`
-3. Download the installer for your platform from the [Releases](https://github.com/op7418/CodePilot/releases) page
+3. Download the installer for your platform from the [Releases](https://github.com/Leondav1s/CodePilot/releases) page
 4. Launch CodePilot
 
 ### Path B: Build from source (developers)
@@ -49,7 +49,7 @@
 | npm | 9+ (ships with Node 18) |
 
 ```bash
-git clone https://github.com/op7418/CodePilot.git
+git clone https://github.com/Leondav1s/CodePilot.git
 cd CodePilot
 npm install
 npm run dev              # browser mode at http://localhost:3000
@@ -116,7 +116,7 @@ npm run electron:dev     # full desktop app
 | Windows | .exe (NSIS) | x64 + arm64 |
 | Linux | .AppImage / .deb / .rpm | x64 + arm64 |
 
-Download from the [Releases](https://github.com/op7418/CodePilot/releases) page.
+Download from the [Releases](https://github.com/Leondav1s/CodePilot/releases) page.
 
 macOS builds are code-signed with a Developer ID certificate but not notarized, so Gatekeeper may still prompt on first launch. Windows and Linux builds are unsigned.
 
