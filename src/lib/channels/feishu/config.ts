@@ -25,6 +25,12 @@ export function loadFeishuConfig(): FeishuConfig | null {
   const groupPolicy = (getSetting('bridge_feishu_group_policy') || 'open') as FeishuConfig['groupPolicy'];
   const requireMention = getSetting('bridge_feishu_require_mention') === 'true';
   const threadSession = getSetting('bridge_feishu_thread_session') === 'true';
+  const cardWebhookEnabled = getSetting('bridge_feishu_card_webhook_enabled') !== 'false';
+  const cardWebhookHost = getSetting('bridge_feishu_card_webhook_host') || '0.0.0.0';
+  const cardWebhookPort = parseInt(getSetting('bridge_feishu_card_webhook_port') || '', 10) || 3457;
+  const cardWebhookPath = getSetting('bridge_feishu_card_webhook_path') || '/webhook/feishu/card';
+  const verificationToken = getSetting('bridge_feishu_verification_token') || '';
+  const encryptKey = getSetting('bridge_feishu_encrypt_key') || '';
 
   // Validation: when dmPolicy is 'open', allowFrom should include '*'
   if (dmPolicy === 'open' && allowFrom.length > 0 && !allowFrom.includes('*')) {
@@ -44,6 +50,14 @@ export function loadFeishuConfig(): FeishuConfig | null {
     cardStreamConfig: {
       throttleMs: 200,
       footer: { status: true, elapsed: true },
+    },
+    cardWebhook: {
+      enabled: cardWebhookEnabled,
+      host: cardWebhookHost,
+      port: cardWebhookPort,
+      path: cardWebhookPath,
+      verificationToken,
+      encryptKey,
     },
   };
 }

@@ -10,6 +10,13 @@
 
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { OutboundMessage, SendResult } from '../../bridge/types';
+import {
+  buildCardContent,
+  buildPostContent,
+  hasComplexMarkdown,
+  htmlToFeishuMarkdown as htmlToFeishuCardMarkdown,
+  preprocessFeishuMarkdown,
+} from '../../bridge/markdown/feishu';
 
 const LOG_TAG = '[feishu/outbound]';
 
@@ -82,11 +89,47 @@ function _optimizeMarkdown(text: string): string {
  * Convert HTML-formatted text (from permission-broker) to Feishu markdown.
  */
 function htmlToFeishuMarkdown(text: string): string {
-  return text
-    .replace(/<b>(.*?)<\/b>/gi, '**$1**')
-    .replace(/<code>(.*?)<\/code>/gi, '`$1`')
-    .replace(/<pre>([\s\S]*?)<\/pre>/gi, '```\n$1\n```')
-    .replace(/<\/?[^>]+>/g, '');
+  return htmlToFeishuCardMarkdown(text);
+}
+
+function isMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.includes('|');
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  return /^\|(?:\s*:?-{3,}:?\s*\|)+$/.test(trimmed);
+}
+
+/**
+ * Feishu post+md rendering drops markdown table rows in practice.
+ * Convert GFM table blocks to fenced text so all cells remain visible.
+ */
+function convertMarkdownTablesToCodeBlocks(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (
+      i + 1 < lines.length &&
+      isMarkdownTableRow(lines[i]) &&
+      isMarkdownTableSeparator(lines[i + 1])
+    ) {
+      const block: string[] = [lines[i], lines[i + 1]];
+      let j = i + 2;
+      while (j < lines.length && isMarkdownTableRow(lines[j])) {
+        block.push(lines[j]);
+        j += 1;
+      }
+      out.push('```text', ...block, '```');
+      i = j - 1;
+      continue;
+    }
+    out.push(lines[i]);
+  }
+
+  return out.join('\n');
 }
 
 // ─── Message sending ─────────────────────────────────────────────────────────
@@ -102,12 +145,13 @@ export async function sendMessage(
   message: OutboundMessage,
 ): Promise<SendResult> {
   try {
-    const chatId = message.address.chatId.split(':thread:')[0];
+    const effectiveChatId = message.address.chatId;
+    const chatId = effectiveChatId.split(':thread:')[0];
     const replyId = message.replyToMessageId;
 
     // Interactive card for messages with buttons
     if (message.inlineButtons && message.inlineButtons.length > 0) {
-      return sendAsInteractiveCard(client, chatId, message.text, message.inlineButtons, replyId);
+      return sendAsInteractiveCard(client, chatId, effectiveChatId, message.text, message.inlineButtons, replyId);
     }
 
     // Post format with md tag for markdown support
@@ -131,13 +175,15 @@ async function sendAsPost(
 ): Promise<SendResult> {
   // Convert HTML to markdown if needed, then optimize for Feishu
   let mdText = parseMode === 'HTML' ? htmlToFeishuMarkdown(text) : text;
+  if (hasComplexMarkdown(mdText)) {
+    const cardContent = buildCardContent(preprocessFeishuMarkdown(mdText));
+    return sendPermissionCard(client, chatId, cardContent, replyToMessageId);
+  }
+
+  mdText = convertMarkdownTablesToCodeBlocks(mdText);
   mdText = optimizeMarkdown(mdText);
 
-  const content = JSON.stringify({
-    zh_cn: {
-      content: [[{ tag: 'md', text: mdText }]],
-    },
-  });
+  const content = buildPostContent(mdText);
 
   let resp: any;
   if (replyToMessageId) {
@@ -168,6 +214,7 @@ async function sendAsPost(
 async function sendAsInteractiveCard(
   client: lark.Client,
   chatId: string,
+  effectiveChatId: string,
   text: string,
   inlineButtons: import('../../bridge/types').InlineButton[][],
   replyToMessageId?: string,
@@ -179,6 +226,7 @@ async function sendAsInteractiveCard(
     const firstCallback = inlineButtons[0]?.[0]?.callbackData || '';
     const isPermission = firstCallback.startsWith('perm:');
     const isCwd = firstCallback.startsWith('cwd:');
+    const isModel = firstCallback.startsWith('model:') || firstCallback.startsWith('model-page:');
 
     // Build button elements
     const allButtons = inlineButtons.flat();
@@ -191,19 +239,21 @@ async function sendAsInteractiveCard(
         btnType = 'primary';
       } else if (btn.text.startsWith('📍')) {
         btnType = 'primary'; // Current project highlighted
+      } else if (btn.text.startsWith('✓')) {
+        btnType = 'primary'; // Current model highlighted
       }
 
       return {
         tag: 'column' as const,
-        width: isCwd ? 'weighted' as const : 'auto' as const,
-        weight: isCwd ? 1 : undefined,
+        width: (isCwd || isModel) ? 'weighted' as const : 'auto' as const,
+        weight: (isCwd || isModel) ? 1 : undefined,
         elements: [
           {
             tag: 'button' as const,
             text: { tag: 'plain_text' as const, content: btn.text },
             type: btnType,
             size: 'medium' as const,
-            value: { callback_data: btn.callbackData, chatId },
+            value: { callback_data: btn.callbackData, chatId: effectiveChatId },
           },
         ],
       };
@@ -214,6 +264,8 @@ async function sendAsInteractiveCard(
       ? { title: 'Permission Required', template: 'blue' as const, icon: 'lock-chat_filled' }
       : isCwd
         ? { title: 'Switch Project', template: 'turquoise' as const, icon: 'folder_outlined' }
+        : isModel
+          ? { title: 'Select Model', template: 'blue' as const, icon: 'info-circle_outlined' }
         : { title: 'Action Required', template: 'blue' as const, icon: 'info-circle_outlined' };
 
     // Build body elements
@@ -235,8 +287,8 @@ async function sendAsInteractiveCard(
 
     bodyElements.push({ tag: 'hr' as const });
 
-    // CWD card: stack buttons vertically (one per row)
-    if (isCwd) {
+    // CWD/model cards: stack buttons vertically (one per row)
+    if (isCwd || isModel) {
       for (const col of buttonColumns) {
         bodyElements.push({
           tag: 'column_set' as const,

@@ -21,6 +21,15 @@ export interface FeishuConfig {
   threadSession: boolean;
   /** Card streaming config (always enabled) */
   cardStreamConfig: CardStreamConfig;
+  /** Optional local HTTP callback server for interactive card actions. */
+  cardWebhook: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    path: string;
+    verificationToken?: string;
+    encryptKey?: string;
+  };
 }
 
 export interface CardStreamConfig {

@@ -9,9 +9,22 @@
  */
 
 import * as lark from '@larksuiteoapi/node-sdk';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import type { FeishuConfig } from './types';
 
 const LOG_TAG = '[feishu/gateway]';
+const FEISHU_DEBUG_LOG = path.join(os.homedir(), '.codepilot', 'feishu-card-debug.log');
+
+function appendFeishuDebugLog(line: string): void {
+  try {
+    fs.mkdirSync(path.dirname(FEISHU_DEBUG_LOG), { recursive: true });
+    fs.appendFileSync(FEISHU_DEBUG_LOG, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // best effort
+  }
+}
 
 /** Map brand string to SDK domain constant. */
 function resolveDomain(brand: string): lark.Domain | string {
@@ -21,15 +34,13 @@ function resolveDomain(brand: string): lark.Domain | string {
   return brand.replace(/\/+$/, '');
 }
 
-/** Default toast returned when the upper-layer handler fails or times out. */
-const FALLBACK_TOAST = {
-  toast: { type: 'info' as const, content: '已收到，正在处理...' },
-};
+/** No-op callback response for WS card actions. Returning undefined means "ack without card update". */
+const FALLBACK_CARD_ACTION_RESPONSE = undefined;
 
 /**
  * Card action callback handler type.
- * Receives the raw event data and returns a toast/card response object.
- * May also return void/undefined — gateway will fill in a default toast.
+ * Receives the raw event data and may return a replacement card object.
+ * Returning void/undefined means "acknowledge without updating the card".
  */
 export type CardActionHandler = (data: unknown) => Promise<unknown>;
 
@@ -76,7 +87,7 @@ export class FeishuGateway {
    *
    * The gateway wraps this handler with a 3-second timeout guarantee:
    * - If the handler resolves within 3s, its return value is used.
-   * - If it throws or times out, a safe fallback toast is returned.
+   * - If it throws or times out, we acknowledge without updating the card.
    * - The handler itself should keep synchronous work minimal and
    *   push heavy logic to fire-and-forget (setImmediate / queueMicrotask).
    *
@@ -104,24 +115,33 @@ export class FeishuGateway {
    */
   private async safeCardActionHandler(data: unknown): Promise<unknown> {
     const handler = this.cardActionHandler;
-    if (!handler) return FALLBACK_TOAST;
+    if (!handler) {
+      appendFeishuDebugLog('[gateway] no cardActionHandler registered');
+      return FALLBACK_CARD_ACTION_RESPONSE;
+    }
 
     const TIMEOUT_MS = 2500; // 2.5s — leave 500ms margin for SDK overhead
 
     try {
+      appendFeishuDebugLog(`[gateway] safeCardActionHandler start payload=${JSON.stringify(data).slice(0, 1200)}`);
       const result = await Promise.race([
         handler(data),
         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), TIMEOUT_MS)),
       ]);
 
       // Handler resolved with a valid response
-      if (result && typeof result === 'object') return result;
+      if (result && typeof result === 'object') {
+        appendFeishuDebugLog(`[gateway] handler returned object keys=${Object.keys(result as Record<string, unknown>).join(',')}`);
+        return result;
+      }
 
-      // Handler returned void/undefined or timed out — use fallback
-      return FALLBACK_TOAST;
+      // Handler returned void/undefined or timed out — acknowledge without card update
+      appendFeishuDebugLog('[gateway] handler returned empty/timeout -> fallback empty response');
+      return FALLBACK_CARD_ACTION_RESPONSE;
     } catch (err) {
       console.error(LOG_TAG, 'Card action handler error:', err);
-      return FALLBACK_TOAST;
+      appendFeishuDebugLog(`[gateway] handler threw error=${err instanceof Error ? err.stack || err.message : String(err)}`);
+      return FALLBACK_CARD_ACTION_RESPONSE;
     }
   }
 
@@ -154,6 +174,7 @@ export class FeishuGateway {
       const origHandleEventData = wsClientAny.handleEventData.bind(wsClientAny);
       wsClientAny.handleEventData = (data: any) => {
         const msgType = data.headers?.find?.((h: any) => h.key === 'type')?.value;
+        appendFeishuDebugLog(`[gateway] ws handleEventData type=${String(msgType)} headers=${JSON.stringify(data.headers || []).slice(0, 600)}`);
         if (msgType !== 'event') console.log(LOG_TAG, 'handleEventData type:', msgType);
         if (msgType === 'card') {
           const patchedData = {
@@ -162,6 +183,7 @@ export class FeishuGateway {
               h.key === 'type' ? { ...h, value: 'event' } : h,
             ),
           };
+          appendFeishuDebugLog('[gateway] rewriting ws frame type card -> event for EventDispatcher');
           return origHandleEventData(patchedData);
         }
         return origHandleEventData(data);

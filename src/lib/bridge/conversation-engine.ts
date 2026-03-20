@@ -12,6 +12,7 @@ import os from 'os';
 import type { ChannelBinding } from './types';
 import type { SSEEvent, TokenUsage, MessageContentBlock, FileAttachment, MCPServerConfig } from '@/types';
 import { streamClaude } from '../claude-client';
+import { streamSSEFromProvider } from '../text-generator';
 import {
   addMessage,
   getMessages,
@@ -215,26 +216,36 @@ export async function processMessage(
     // Load MCP servers from Claude config files so the SDK has access to
     // user-level MCP tools, matching the desktop chat route behavior.
     const mcpServers = loadMcpServers();
+    const usesStandardTextProvider = new Set(['google', 'openai-compatible', 'openrouter']).has(resolved.protocol);
 
-    const stream = streamClaude({
-      prompt: text,
-      sessionId,
-      sdkSessionId: binding.sdkSessionId || undefined,
-      model: effectiveModel,
-      systemPrompt: session?.system_prompt || undefined,
-      workingDirectory: binding.workingDirectory || session?.working_directory || undefined,
-      abortController,
-      permissionMode,
-      provider: resolvedProvider,
-      sessionProviderId: session?.provider_id || undefined,
-      mcpServers,
-      conversationHistory: historyMsgs,
-      files,
-      bypassPermissions,
-      onRuntimeStatusChange: (status: string) => {
-        try { setSessionRuntimeStatus(sessionId, status); } catch { /* best effort */ }
-      },
-    });
+    const stream = usesStandardTextProvider
+      ? streamSSEFromProvider({
+          providerId: session?.provider_id || '',
+          model: effectiveModel || '',
+          system: session?.system_prompt || '',
+          prompt: text,
+          history: historyMsgs,
+          abortSignal: abortController.signal,
+        })
+      : streamClaude({
+          prompt: text,
+          sessionId,
+          sdkSessionId: binding.sdkSessionId || undefined,
+          model: effectiveModel,
+          systemPrompt: session?.system_prompt || undefined,
+          workingDirectory: binding.workingDirectory || session?.working_directory || undefined,
+          abortController,
+          permissionMode,
+          provider: resolvedProvider,
+          sessionProviderId: session?.provider_id || undefined,
+          mcpServers,
+          conversationHistory: historyMsgs,
+          files,
+          bypassPermissions,
+          onRuntimeStatusChange: (status: string) => {
+            try { setSessionRuntimeStatus(sessionId, status); } catch { /* best effort */ }
+          },
+        });
 
     // Consume the stream server-side (replicate collectStreamResponse pattern).
     // Permission requests are forwarded immediately via the callback during streaming

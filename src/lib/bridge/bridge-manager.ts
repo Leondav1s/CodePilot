@@ -19,7 +19,21 @@ import { deliver, deliverRendered, chunkText } from './delivery-layer';
 import { PLATFORM_LIMITS as limits } from './types';
 import { markdownToTelegramChunks } from './markdown/telegram';
 import { markdownToDiscordChunks } from './markdown/discord';
-import { getSetting, insertAuditLog, updateChannelBinding } from '../db';
+import {
+  checkDedup,
+  getAllProviders,
+  getModelsForProvider,
+  getProvider,
+  getSession,
+  getSetting,
+  insertAuditLog,
+  insertDedup,
+  updateChannelBinding,
+  updateSdkSessionId,
+  updateSessionModel,
+  updateSessionProvider,
+  updateSessionProviderId,
+} from '../db';
 import { setBridgeModeActive } from '../telegram-bot';
 import { escapeHtml } from './adapters/telegram-utils';
 import {
@@ -30,6 +44,7 @@ import {
   validateMode,
 } from './security/validators';
 import { ChannelPluginAdapter } from '../channels/channel-plugin-adapter';
+import { getDefaultModelsForProvider, inferProtocolFromLegacy } from '../provider-catalog';
 
 /**
  * Extract the real platform chat_id from a potentially synthetic thread-session address.
@@ -38,6 +53,194 @@ import { ChannelPluginAdapter } from '../channels/channel-plugin-adapter';
 function extractRealChatId(chatId: string): string {
   const threadIdx = chatId.indexOf(':thread:');
   return threadIdx >= 0 ? chatId.slice(0, threadIdx) : chatId;
+}
+
+const BUILTIN_ENV_MODELS = [
+  { value: 'sonnet', label: 'Claude Code / Sonnet 4.6' },
+  { value: 'opus', label: 'Claude Code / Opus 4.6' },
+  { value: 'haiku', label: 'Claude Code / Haiku 4.5' },
+];
+
+const MEDIA_PROTOCOLS = new Set<string>(['gemini-image']);
+const MEDIA_PROVIDER_TYPES = new Set<string>(['gemini-image']);
+
+interface BridgeModelOption {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  label: string;
+}
+
+const MODEL_CARD_PAGE_SIZE = 8;
+
+function dedupeBridgeModelOptions(options: BridgeModelOption[]): BridgeModelOption[] {
+  const seen = new Set<string>();
+  const result: BridgeModelOption[] = [];
+  for (const option of options) {
+    const key = `${option.providerId}::${option.modelId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(option);
+  }
+  return result;
+}
+
+function getBridgeModelOptions(): BridgeModelOption[] {
+  const options: BridgeModelOption[] = BUILTIN_ENV_MODELS.map((model) => ({
+    providerId: 'env',
+    providerName: 'Claude Code',
+    modelId: model.value,
+    label: model.label,
+  }));
+
+  for (const provider of getAllProviders()) {
+    const protocol = provider.protocol || inferProtocolFromLegacy(provider.provider_type, provider.base_url);
+    if (MEDIA_PROTOCOLS.has(protocol) || MEDIA_PROVIDER_TYPES.has(provider.provider_type)) continue;
+
+    const providerModels = getModelsForProvider(provider.id);
+    if (providerModels.length > 0) {
+      for (const model of providerModels) {
+        options.push({
+          providerId: provider.id,
+          providerName: provider.name,
+          modelId: model.model_id,
+          label: model.display_name || model.model_id,
+        });
+      }
+      continue;
+    }
+
+    const catalogModels = getDefaultModelsForProvider(protocol as never, provider.base_url);
+    for (const model of catalogModels) {
+      options.push({
+        providerId: provider.id,
+        providerName: provider.name,
+        modelId: model.modelId,
+        label: model.displayName,
+      });
+    }
+  }
+
+  return dedupeBridgeModelOptions(options);
+}
+
+function encodeModelCallback(providerId: string, modelId: string): string {
+  return `model:${providerId}:${encodeURIComponent(modelId)}`;
+}
+
+function decodeModelCallback(callbackData: string): { providerId: string; modelId: string } | null {
+  const payload = callbackData.slice('model:'.length);
+  const splitIndex = payload.indexOf(':');
+  if (splitIndex <= 0) return null;
+  return {
+    providerId: payload.slice(0, splitIndex),
+    modelId: decodeURIComponent(payload.slice(splitIndex + 1)),
+  };
+}
+
+function resolveBridgeModelSelection(
+  input: string,
+  currentProviderId: string,
+): { option?: BridgeModelOption; error?: string } {
+  const options = getBridgeModelOptions();
+  const trimmed = input.trim();
+  if (!trimmed) return { error: 'Model cannot be empty.' };
+
+  if (trimmed.includes('::')) {
+    const [providerId, modelId] = trimmed.split('::', 2);
+    const exact = options.find((opt) => opt.providerId === providerId && opt.modelId === modelId);
+    if (exact) return { option: exact };
+    return { error: `Model not found: ${escapeHtml(trimmed)}` };
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const inCurrentProvider = options.find((opt) => opt.providerId === currentProviderId && opt.modelId.toLowerCase() === normalized);
+  if (inCurrentProvider) return { option: inCurrentProvider };
+
+  const exactModelMatches = options.filter((opt) => opt.modelId.toLowerCase() === normalized);
+  if (exactModelMatches.length === 1) return { option: exactModelMatches[0] };
+  if (exactModelMatches.length > 1) {
+    return {
+      error: `Model name is ambiguous. Use <code>provider_id::model</code>, for example <code>${escapeHtml(exactModelMatches[0].providerId)}::${escapeHtml(exactModelMatches[0].modelId)}</code>.`,
+    };
+  }
+
+  const labelMatches = options.filter((opt) => opt.label.toLowerCase() === normalized);
+  if (labelMatches.length === 1) return { option: labelMatches[0] };
+
+  return { error: `Model not found: ${escapeHtml(trimmed)}` };
+}
+
+function getBridgeCurrentProviderId(binding: import('./types').ChannelBinding): string {
+  const session = getSession(binding.codepilotSessionId);
+  return session?.provider_id || getSetting('bridge_default_provider_id') || 'env';
+}
+
+function applyBridgeModelSelection(binding: import('./types').ChannelBinding, option: BridgeModelOption): void {
+  router.updateBinding(binding.id, { model: option.modelId, sdkSessionId: '' });
+  updateSessionProviderId(binding.codepilotSessionId, option.providerId);
+  updateSessionProvider(binding.codepilotSessionId, option.providerName);
+  updateSessionModel(binding.codepilotSessionId, option.modelId);
+  updateSdkSessionId(binding.codepilotSessionId, '');
+}
+
+function encodeModelPageCallback(page: number): string {
+  return `model-page:${page}`;
+}
+
+function decodeModelPageCallback(callbackData: string): number | null {
+  const raw = callbackData.slice('model-page:'.length);
+  const page = Number.parseInt(raw, 10);
+  return Number.isFinite(page) && page >= 0 ? page : null;
+}
+
+function buildModelPickerCard(
+  address: import('./types').ChannelAddress,
+  currentProviderId: string,
+  currentModelId: string,
+  replyToMessageId?: string,
+  page = 0,
+): OutboundMessage {
+  const options = getBridgeModelOptions();
+  const totalPages = Math.max(1, Math.ceil(options.length / MODEL_CARD_PAGE_SIZE));
+  const safePage = Math.min(Math.max(page, 0), totalPages - 1);
+  const start = safePage * MODEL_CARD_PAGE_SIZE;
+  const pageOptions = options.slice(start, start + MODEL_CARD_PAGE_SIZE);
+  const currentOption = options.find(
+    (opt) => opt.providerId === currentProviderId && opt.modelId === currentModelId,
+  );
+
+  const inlineButtons = pageOptions.map((opt) => {
+    const isCurrent = opt.providerId === currentProviderId && opt.modelId === currentModelId;
+    return [{
+      text: isCurrent ? `✓ ${opt.label}` : opt.label,
+      callbackData: encodeModelCallback(opt.providerId, opt.modelId),
+    }];
+  });
+
+  if (totalPages > 1) {
+    if (safePage > 0) {
+      inlineButtons.push([{ text: '上一页', callbackData: encodeModelPageCallback(safePage - 1) }]);
+    }
+    if (safePage < totalPages - 1) {
+      inlineButtons.push([{ text: '下一页', callbackData: encodeModelPageCallback(safePage + 1) }]);
+    }
+  }
+
+  return {
+    address,
+    text: [
+      '<b>Select Bridge Model</b>',
+      '',
+      currentOption
+        ? `Current: <code>${escapeHtml(currentOption.providerName)} / ${escapeHtml(currentOption.modelId)}</code>`
+        : 'Current: <code>default</code>',
+      `Page ${safePage + 1}/${totalPages} · Tap a model below to switch the current bridge session.`,
+    ].join('\n'),
+    parseMode: 'HTML',
+    replyToMessageId,
+    inlineButtons,
+  };
 }
 
 const GLOBAL_KEY = '__bridge_manager__';
@@ -456,6 +659,27 @@ async function handleMessage(
   meta.lastMessageAt = new Date().toISOString();
   adapterState.adapterMeta.set(adapter.channelType, meta);
 
+  // Persistent inbound dedup by platform message ID.
+  // Some adapters (notably Feishu) can redeliver the same inbound event,
+  // and without this the bridge will generate duplicate replies.
+  if (msg.messageId && !msg.callbackData) {
+    const dedupKey = `${adapter.channelType}:${msg.address.chatId}:${msg.messageId}`;
+    if (checkDedup(dedupKey)) {
+      insertAuditLog({
+        channelType: adapter.channelType,
+        chatId: msg.address.chatId,
+        direction: 'inbound',
+        messageId: msg.messageId,
+        summary: '[DEDUP] Duplicate inbound message skipped',
+      });
+      if (msg.updateId != null && adapter.acknowledgeUpdate) {
+        adapter.acknowledgeUpdate(msg.updateId);
+      }
+      return;
+    }
+    insertDedup(dedupKey);
+  }
+
   // Acknowledge the update offset after processing completes (or fails).
   // This ensures the adapter only advances its committed offset once the
   // message has been fully handled, preventing message loss on crash.
@@ -467,6 +691,75 @@ async function handleMessage(
 
   // Handle callback queries
   if (msg.callbackData) {
+    if (msg.callbackData.startsWith('model-page:')) {
+      const page = decodeModelPageCallback(msg.callbackData);
+      const replyToMessageId = msg.callbackMessageId || msg.messageId;
+      if (page == null) {
+        await deliver(adapter, {
+          address: msg.address,
+          text: 'Invalid model page.',
+          parseMode: 'plain',
+          replyToMessageId,
+        });
+        ack();
+        return;
+      }
+
+      const binding = router.resolve(msg.address);
+      const currentProviderId = getBridgeCurrentProviderId(binding);
+      const currentSession = getSession(binding.codepilotSessionId);
+      const currentModelId = binding.model || currentSession?.model || '';
+      await deliver(adapter, buildModelPickerCard(msg.address, currentProviderId, currentModelId, replyToMessageId, page));
+      ack();
+      return;
+    }
+
+    if (msg.callbackData.startsWith('model:')) {
+      const selection = decodeModelCallback(msg.callbackData);
+      const replyToMessageId = msg.callbackMessageId || msg.messageId;
+      if (!selection) {
+        await deliver(adapter, {
+          address: msg.address,
+          text: 'Invalid model selection.',
+          parseMode: 'plain',
+          replyToMessageId,
+        });
+        ack();
+        return;
+      }
+
+      const option = getBridgeModelOptions().find(
+        (item) => item.providerId === selection.providerId && item.modelId === selection.modelId,
+      );
+      if (!option) {
+        await deliver(adapter, {
+          address: msg.address,
+          text: 'Selected model is no longer available.',
+          parseMode: 'plain',
+          replyToMessageId,
+        });
+        ack();
+        return;
+      }
+
+      const binding = router.resolve(msg.address);
+      applyBridgeModelSelection(binding, option);
+      await deliver(adapter, {
+        address: msg.address,
+        text: [
+          '<b>Bridge model updated</b>',
+          '',
+          `Provider: <code>${escapeHtml(option.providerName)}</code>`,
+          `Model: <code>${escapeHtml(option.modelId)}</code>`,
+          'Next message will start with the new model.',
+        ].join('\n'),
+        parseMode: 'HTML',
+        replyToMessageId,
+      });
+      ack();
+      return;
+    }
+
     // CWD switch button callback
     if (msg.callbackData.startsWith('cwd:')) {
       const targetDir = msg.callbackData.slice(4);
@@ -921,14 +1214,65 @@ async function handleCommand(
       break;
     }
 
+    case '/model': {
+      const binding = router.resolve(msg.address);
+      const currentProviderId = getBridgeCurrentProviderId(binding);
+      const currentSession = getSession(binding.codepilotSessionId);
+      const currentModelId = binding.model || currentSession?.model || '';
+      const currentOption = getBridgeModelOptions().find(
+        (opt) => opt.providerId === currentProviderId && opt.modelId === currentModelId,
+      );
+
+      if (!args) {
+        const options = getBridgeModelOptions();
+        if (adapter.channelType === 'feishu') {
+          await deliver(adapter, buildModelPickerCard(msg.address, currentProviderId, currentModelId, replyToMessageId, 0));
+          return;
+        }
+
+        response = [
+          '<b>Available bridge models</b>',
+          '',
+          ...options.map((opt) => {
+            const prefix = opt.providerId === currentProviderId && opt.modelId === currentModelId ? '• [current]' : '•';
+            return `${prefix} <code>${escapeHtml(opt.providerId)}::${escapeHtml(opt.modelId)}</code> — ${escapeHtml(opt.label)}`;
+          }),
+          '',
+          'Usage: /model provider_id::model',
+        ].join('\n');
+        break;
+      }
+
+      const resolved = resolveBridgeModelSelection(args, currentProviderId);
+      if (!resolved.option) {
+        response = resolved.error || 'Model not found.';
+        break;
+      }
+
+      applyBridgeModelSelection(binding, resolved.option);
+      response = [
+        '<b>Bridge model updated</b>',
+        '',
+        `Provider: <code>${escapeHtml(resolved.option.providerName)}</code>`,
+        `Model: <code>${escapeHtml(resolved.option.modelId)}</code>`,
+        'Next message will start with the new model.',
+      ].join('\n');
+      break;
+    }
+
     case '/status': {
       const binding = router.resolve(msg.address);
+      const session = getSession(binding.codepilotSessionId);
+      const providerName = session?.provider_id === 'env'
+        ? 'Claude Code'
+        : (session?.provider_id ? getProvider(session.provider_id)?.name || session.provider_id : 'default');
       response = [
         '<b>Bridge Status</b>',
         '',
         `Session: <code>${binding.codepilotSessionId.slice(0, 8)}...</code>`,
         `CWD: <code>${escapeHtml(binding.workingDirectory || '~')}</code>`,
         `Mode: <b>${binding.mode}</b>`,
+        `Provider: <code>${escapeHtml(providerName)}</code>`,
         `Model: <code>${binding.model || 'default'}</code>`,
       ].join('\n');
       break;
@@ -1222,6 +1566,8 @@ async function handleCommand(
         '/cwd /path - Change CWD, reset context',
         '/bind &lt;session_id&gt; - Bind to existing session',
         '/mode plan|code|ask - Change mode',
+        '/model - Open model selector card (Feishu)',
+        '/model provider_id::model - Switch current bridge model',
         '/status - Show session / CWD / mode / model',
         '/sessions - List recent sessions',
         '/stop - Stop current task',

@@ -14,6 +14,23 @@ import { parseInboundMessage } from './inbound';
 import { sendMessage, addReaction, removeReaction } from './outbound';
 import { isUserAuthorized } from './policy';
 import { createCardStreamController } from './card-controller';
+import { FeishuCardWebhookServer } from './card-webhook';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const FEISHU_DEBUG_LOG = path.join(os.homedir(), '.codepilot', 'feishu-card-debug.log');
+
+function appendFeishuDebugLog(line: string): void {
+  try {
+    fs.mkdirSync(path.dirname(FEISHU_DEBUG_LOG), { recursive: true });
+    fs.appendFileSync(FEISHU_DEBUG_LOG, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // best effort
+  }
+}
+
+const EMPTY_CARD_ACTION_RESPONSE = {};
 
 export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
   readonly meta: ChannelMeta = {
@@ -29,6 +46,8 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
   private lastMessageIdByChat = new Map<string, string>();
   /** Track active reaction IDs per chatId so we can remove them on completion. */
   private activeReactions = new Map<string, { messageId: string; reactionId: string }>();
+  /** Optional local HTTP callback server for interactive card actions. */
+  private cardWebhookServer: FeishuCardWebhookServer | null = null;
 
   loadConfig(): FeishuConfig | null {
     this.config = loadFeishuConfig();
@@ -73,12 +92,15 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
 
     // Register card action handler — converts button clicks to callback messages.
     // Gateway guarantees 3-second response; this handler should stay lightweight.
+    // In WS mode we do not return toast payloads here, because the SDK expects
+    // either a replacement card object or no response body at all.
     // Supports two button value formats:
     //   1. { callback_data: "perm:allow:xxx" }  — CodePilot permission buttons
     //   2. { action: "app_auth_done", operation_id: "xxx" }  — OpenClaw-style buttons
     this.gateway.registerCardActionHandler(async (data: unknown) => {
       const event = data as any;
       console.log('[feishu/plugin]', 'Card action raw event:', JSON.stringify(event).slice(0, 500));
+      appendFeishuDebugLog(`[plugin] raw card action=${JSON.stringify(event).slice(0, 1500)}`);
       const value = event?.action?.value ?? {};
       // Feishu card.action.trigger v2 callback structure (per official docs):
       //   event.operator.open_id, event.context.open_chat_id, event.context.open_message_id
@@ -93,6 +115,7 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
       // Format 1: callback_data (permission buttons)
       const callbackData = value.callback_data;
       if (callbackData && chatId) {
+        appendFeishuDebugLog(`[plugin] callback_data parsed chatId=${chatId} messageId=${messageId} userId=${userId} callback=${callbackData}`);
         const callbackMsg: InboundMessage = {
           messageId: messageId || `card_action_${Date.now()}`,
           address: {
@@ -107,15 +130,14 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
         };
         console.log('[feishu/plugin]', 'Card action (callback_data):', callbackData);
         this.enqueueMessage(callbackMsg);
-        return {
-          toast: { type: 'info' as const, content: '已收到，正在处理...' },
-        };
+        return EMPTY_CARD_ACTION_RESPONSE;
       }
 
       // Format 2: action / operation_id (OpenClaw-style buttons)
       const action = value.action;
       const operationId = value.operation_id;
       if (action) {
+        appendFeishuDebugLog(`[plugin] action parsed chatId=${chatId} messageId=${messageId} userId=${userId} action=${action} operationId=${operationId ?? ''}`);
         // Encode as callbackData so the existing bridge-manager callback path
         // can handle it. Format: "action:{action}:{operation_id}"
         const syntheticCallback = operationId
@@ -135,22 +157,29 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
         };
         console.log('[feishu/plugin]', 'Card action (action):', action, operationId ?? '');
         this.enqueueMessage(actionMsg);
-        return {
-          toast: { type: 'info' as const, content: '已收到，正在处理...' },
-        };
+        return EMPTY_CARD_ACTION_RESPONSE;
       }
 
-      // Unknown button format — still return a valid toast to prevent 200340
+      // Unknown button format — still return a successful empty response.
       console.warn('[feishu/plugin]', 'Unknown card action value:', JSON.stringify(value).slice(0, 200));
-      return {
-        toast: { type: 'info' as const, content: '已收到' },
-      };
+      appendFeishuDebugLog(`[plugin] unknown card action value=${JSON.stringify(value).slice(0, 800)}`);
+      return EMPTY_CARD_ACTION_RESPONSE;
     });
+
+    this.cardWebhookServer = new FeishuCardWebhookServer(this.config, (msg) => {
+      appendFeishuDebugLog(`[plugin] injected inbound callback messageId=${msg.messageId} callback=${msg.callbackData || ''}`);
+      this.enqueueMessage(msg);
+    });
+    await this.cardWebhookServer.start();
 
     await this.gateway.start();
   }
 
   async stop(): Promise<void> {
+    if (this.cardWebhookServer) {
+      await this.cardWebhookServer.stop();
+      this.cardWebhookServer = null;
+    }
     if (this.gateway) {
       await this.gateway.stop();
       this.gateway = null;
@@ -178,6 +207,11 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
     } else {
       this.messageQueue.push(msg);
     }
+  }
+
+  /** Allow non-WS integrations (for example Feishu card webhooks) to inject messages. */
+  injectInboundMessage(msg: InboundMessage): void {
+    this.enqueueMessage(msg);
   }
 
   async consumeOne(): Promise<InboundMessage | null> {

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { streamClaude } from '@/lib/claude-client';
+import { streamSSEFromProvider } from '@/lib/text-generator';
 import { addMessage, getMessages, getSession, updateSessionTitle, updateSdkSessionId, updateSessionModel, updateSessionProvider, updateSessionProviderId, getSetting, acquireSessionLock, renewSessionLock, releaseSessionLock, setSessionRuntimeStatus, syncSdkTasks } from '@/lib/db';
 import { resolveProvider as resolveProviderUnified } from '@/lib/provider-resolver';
 import { notifySessionStart, notifySessionComplete, notifySessionError } from '@/lib/telegram-bot';
@@ -356,42 +357,64 @@ Start by greeting the user and asking the first question.
     // even when settingSources skips 'user' (custom provider scenario).
     const mcpServers = loadMcpServers();
 
-    // Stream Claude response, using SDK session ID for resume if available
-    console.log('[chat API] streamClaude params:', {
-      promptLength: content.length,
-      promptFirst200: content.slice(0, 200),
-      sdkSessionId: session.sdk_session_id || 'none',
-      systemPromptLength: finalSystemPrompt?.length || 0,
-      systemPromptFirst200: finalSystemPrompt?.slice(0, 200) || 'none',
-    });
-    const stream = streamClaude({
-      prompt: content,
-      sessionId: session_id,
-      sdkSessionId: session.sdk_session_id || undefined,
-      model: resolved.upstreamModel || resolved.model || effectiveModel,
-      systemPrompt: finalSystemPrompt,
-      workingDirectory: session.sdk_cwd || session.working_directory || undefined,
-      abortController,
-      permissionMode,
-      files: fileAttachments,
-      imageAgentMode: !!systemPromptAppend,
-      toolTimeoutSeconds: toolTimeout || 300,
-      provider: resolvedProvider,
-      providerId: effectiveProviderId || undefined,
-      sessionProviderId: session.provider_id || undefined,
-      mcpServers,
-      conversationHistory: historyMsgs,
-      bypassPermissions: session.permission_profile === 'full_access',
-      thinking: thinking as ClaudeStreamOptions['thinking'],
-      effort: effort as ClaudeStreamOptions['effort'],
-      context1m: context_1m,
-      generativeUI: generativeUIEnabled,
-      enableFileCheckpointing: enableFileCheckpointing ?? (effectiveMode === 'code'),
-      autoTrigger: !!autoTrigger,
-      onRuntimeStatusChange: (status: string) => {
-        try { setSessionRuntimeStatus(session_id, status); } catch { /* best effort */ }
-      },
-    });
+    const usesStandardTextProvider = new Set(['google', 'openai-compatible', 'openrouter']).has(resolved.protocol);
+
+    let stream: ReadableStream<string>;
+    if (usesStandardTextProvider) {
+      console.log('[chat API] streamSSEFromProvider params:', {
+        promptLength: content.length,
+        promptFirst200: content.slice(0, 200),
+        systemPromptLength: finalSystemPrompt?.length || 0,
+        systemPromptFirst200: finalSystemPrompt?.slice(0, 200) || 'none',
+        protocol: resolved.protocol,
+        model: resolved.upstreamModel || resolved.model || effectiveModel,
+      });
+      stream = streamSSEFromProvider({
+        providerId: effectiveProviderId || session.provider_id || '',
+        model: resolved.upstreamModel || resolved.model || effectiveModel || '',
+        system: finalSystemPrompt || '',
+        prompt: content,
+        history: historyMsgs,
+        abortSignal: abortController.signal,
+      });
+    } else {
+      // Stream Claude response, using SDK session ID for resume if available
+      console.log('[chat API] streamClaude params:', {
+        promptLength: content.length,
+        promptFirst200: content.slice(0, 200),
+        sdkSessionId: session.sdk_session_id || 'none',
+        systemPromptLength: finalSystemPrompt?.length || 0,
+        systemPromptFirst200: finalSystemPrompt?.slice(0, 200) || 'none',
+      });
+      stream = streamClaude({
+        prompt: content,
+        sessionId: session_id,
+        sdkSessionId: session.sdk_session_id || undefined,
+        model: resolved.upstreamModel || resolved.model || effectiveModel,
+        systemPrompt: finalSystemPrompt,
+        workingDirectory: session.sdk_cwd || session.working_directory || undefined,
+        abortController,
+        permissionMode,
+        files: fileAttachments,
+        imageAgentMode: !!systemPromptAppend,
+        toolTimeoutSeconds: toolTimeout || 300,
+        provider: resolvedProvider,
+        providerId: effectiveProviderId || undefined,
+        sessionProviderId: session.provider_id || undefined,
+        mcpServers,
+        conversationHistory: historyMsgs,
+        bypassPermissions: session.permission_profile === 'full_access',
+        thinking: thinking as ClaudeStreamOptions['thinking'],
+        effort: effort as ClaudeStreamOptions['effort'],
+        context1m: context_1m,
+        generativeUI: generativeUIEnabled,
+        enableFileCheckpointing: enableFileCheckpointing ?? (effectiveMode === 'code'),
+        autoTrigger: !!autoTrigger,
+        onRuntimeStatusChange: (status: string) => {
+          try { setSessionRuntimeStatus(session_id, status); } catch { /* best effort */ }
+        },
+      });
+    }
 
     // Tee the stream: one for client, one for collecting the response
     const [streamForClient, streamForCollect] = stream.tee();
