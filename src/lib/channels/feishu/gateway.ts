@@ -44,6 +44,19 @@ const FALLBACK_CARD_ACTION_RESPONSE = undefined;
  */
 export type CardActionHandler = (data: unknown) => Promise<unknown>;
 
+interface WsHeader {
+  key: string;
+  value: string;
+}
+
+interface WsEventFrame {
+  headers?: WsHeader[];
+}
+
+type PatchedWsClient = {
+  handleEventData?: (data: WsEventFrame) => unknown;
+};
+
 export class FeishuGateway {
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
@@ -75,11 +88,12 @@ export class FeishuGateway {
   /** Register the im.message.receive_v1 handler. */
   registerMessageHandler(handler: (data: unknown) => void): void {
     this.onMessage = handler;
-    this.eventDispatcher.register({
-      'im.message.receive_v1': ((data: unknown) => {
+    const registrations = {
+      'im.message.receive_v1': (data: unknown) => {
         handler(data);
-      }) as any,
-    });
+      },
+    } as Parameters<lark.EventDispatcher['register']>[0];
+    this.eventDispatcher.register(registrations);
   }
 
   /**
@@ -100,9 +114,10 @@ export class FeishuGateway {
 
     // Register the safe wrapper on the EventDispatcher.
     // The wrapper guarantees a response object is always returned.
-    this.eventDispatcher.register({
-      'card.action.trigger': ((data: unknown) => this.safeCardActionHandler(data)) as any,
-    });
+    const registrations = {
+      'card.action.trigger': (data: unknown) => this.safeCardActionHandler(data),
+    } as Parameters<lark.EventDispatcher['register']>[0];
+    this.eventDispatcher.register(registrations);
   }
 
   /**
@@ -169,17 +184,17 @@ export class FeishuGateway {
     // The SDK's WSClient only handles type="event" by default; card action
     // callbacks arrive as type="card" and would be silently dropped.
     // Patch: rewrite type header from "card" to "event" before dispatching.
-    const wsClientAny = this.wsClient as any;
+    const wsClientAny = this.wsClient as unknown as PatchedWsClient;
     if (typeof wsClientAny.handleEventData === 'function') {
       const origHandleEventData = wsClientAny.handleEventData.bind(wsClientAny);
-      wsClientAny.handleEventData = (data: any) => {
-        const msgType = data.headers?.find?.((h: any) => h.key === 'type')?.value;
+      wsClientAny.handleEventData = (data: WsEventFrame) => {
+        const msgType = data.headers?.find?.((h: WsHeader) => h.key === 'type')?.value;
         appendFeishuDebugLog(`[gateway] ws handleEventData type=${String(msgType)} headers=${JSON.stringify(data.headers || []).slice(0, 600)}`);
         if (msgType !== 'event') console.log(LOG_TAG, 'handleEventData type:', msgType);
         if (msgType === 'card') {
           const patchedData = {
             ...data,
-            headers: data.headers.map((h: any) =>
+            headers: (data.headers || []).map((h: WsHeader) =>
               h.key === 'type' ? { ...h, value: 'event' } : h,
             ),
           };

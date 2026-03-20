@@ -20,6 +20,27 @@ import os from 'os';
 import path from 'path';
 
 const FEISHU_DEBUG_LOG = path.join(os.homedir(), '.codepilot', 'feishu-card-debug.log');
+interface FeishuCardActionValue {
+  chatId?: string;
+  callback_data?: string;
+  action?: string;
+  operation_id?: string;
+}
+
+interface FeishuCardActionEvent {
+  action?: {
+    value?: FeishuCardActionValue;
+  };
+  context?: {
+    open_chat_id?: string;
+    open_message_id?: string;
+  };
+  open_message_id?: string;
+  operator?: {
+    open_id?: string;
+  };
+  open_id?: string;
+}
 
 function appendFeishuDebugLog(line: string): void {
   try {
@@ -98,7 +119,7 @@ export class FeishuChannelPlugin implements ChannelPlugin<FeishuConfig> {
     //   1. { callback_data: "perm:allow:xxx" }  — CodePilot permission buttons
     //   2. { action: "app_auth_done", operation_id: "xxx" }  — OpenClaw-style buttons
     this.gateway.registerCardActionHandler(async (data: unknown) => {
-      const event = data as any;
+      const event = (typeof data === 'object' && data !== null ? data : {}) as FeishuCardActionEvent;
       console.log('[feishu/plugin]', 'Card action raw event:', JSON.stringify(event).slice(0, 500));
       appendFeishuDebugLog(`[plugin] raw card action=${JSON.stringify(event).slice(0, 1500)}`);
       const value = event?.action?.value ?? {};

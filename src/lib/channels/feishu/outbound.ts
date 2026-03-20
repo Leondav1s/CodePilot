@@ -20,6 +20,19 @@ import {
 
 const LOG_TAG = '[feishu/outbound]';
 
+type CardElement = Record<string, unknown>;
+
+interface MessageApiResponse {
+  data?: {
+    message_id?: string;
+    reaction_id?: string;
+  };
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 // ─── Markdown optimization for Feishu ────────────────────────────────────────
 
 /**
@@ -156,9 +169,10 @@ export async function sendMessage(
 
     // Post format with md tag for markdown support
     return sendAsPost(client, chatId, message.text, message.parseMode, replyId);
-  } catch (err: any) {
-    console.error(LOG_TAG, 'Send failed:', err?.message || err);
-    return { ok: false, error: err?.message || 'Unknown error' };
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
+    console.error(LOG_TAG, 'Send failed:', message);
+    return { ok: false, error: message || 'Unknown error' };
   }
 }
 
@@ -185,7 +199,7 @@ async function sendAsPost(
 
   const content = buildPostContent(mdText);
 
-  let resp: any;
+  let resp: MessageApiResponse;
   if (replyToMessageId) {
     resp = await client.im.message.reply({
       path: { message_id: replyToMessageId },
@@ -269,7 +283,7 @@ async function sendAsInteractiveCard(
         : { title: 'Action Required', template: 'blue' as const, icon: 'info-circle_outlined' };
 
     // Build body elements
-    const bodyElements: any[] = [
+    const bodyElements: CardElement[] = [
       {
         tag: 'markdown' as const,
         content: mdText,
@@ -319,7 +333,7 @@ async function sendAsInteractiveCard(
 
     const cardContent = JSON.stringify(card);
 
-    let resp: any;
+    let resp: MessageApiResponse;
     if (replyToMessageId) {
       resp = await client.im.message.reply({
         path: { message_id: replyToMessageId },
@@ -335,9 +349,10 @@ async function sendAsInteractiveCard(
     const msgId = resp?.data?.message_id || '';
     console.log(LOG_TAG, 'Sent interactive card:', msgId);
     return { ok: true, messageId: msgId };
-  } catch (err: any) {
-    console.error(LOG_TAG, 'Interactive card send failed:', err?.message || err);
-    return { ok: false, error: err?.message || 'Unknown error' };
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
+    console.error(LOG_TAG, 'Interactive card send failed:', message);
+    return { ok: false, error: message || 'Unknown error' };
   }
 }
 
@@ -357,10 +372,11 @@ export async function addReaction(
       path: { message_id: messageId },
       data: { reaction_type: { emoji_type: emojiType } },
     });
-    return (resp?.data as any)?.reaction_id || null;
-  } catch (err: any) {
+    const reactionResp = resp as MessageApiResponse;
+    return reactionResp.data?.reaction_id || null;
+  } catch (err: unknown) {
     // Non-critical — log and swallow
-    console.warn(LOG_TAG, 'Failed to add reaction:', err?.message || err);
+    console.warn(LOG_TAG, 'Failed to add reaction:', getErrorMessage(err));
     return null;
   }
 }
@@ -378,8 +394,8 @@ export async function removeReaction(
     await client.im.messageReaction.delete({
       path: { message_id: messageId, reaction_id: reactionId },
     });
-  } catch (err: any) {
-    console.warn(LOG_TAG, 'Failed to remove reaction:', err?.message || err);
+  } catch (err: unknown) {
+    console.warn(LOG_TAG, 'Failed to remove reaction:', getErrorMessage(err));
   }
 }
 
@@ -395,7 +411,7 @@ export async function sendPermissionCard(
   try {
     const realChatId = chatId.split(':thread:')[0];
 
-    let resp: any;
+    let resp: MessageApiResponse;
     if (replyToMessageId) {
       resp = await client.im.message.reply({
         path: { message_id: replyToMessageId },
@@ -410,8 +426,9 @@ export async function sendPermissionCard(
 
     const msgId = resp?.data?.message_id || '';
     return { ok: true, messageId: msgId };
-  } catch (err: any) {
-    console.error(LOG_TAG, 'Permission card send failed:', err?.message || err);
-    return { ok: false, error: err?.message || 'Unknown error' };
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
+    console.error(LOG_TAG, 'Permission card send failed:', message);
+    return { ok: false, error: message || 'Unknown error' };
   }
 }

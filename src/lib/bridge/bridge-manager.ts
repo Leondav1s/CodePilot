@@ -14,6 +14,7 @@ import type { BaseChannelAdapter } from './channel-adapter';
 import './adapters';
 import * as router from './channel-router';
 import * as engine from './conversation-engine';
+import type { OnToolEvent } from './conversation-engine';
 import * as broker from './permission-broker';
 import { deliver, deliverRendered, chunkText } from './delivery-layer';
 import { PLATFORM_LIMITS as limits } from './types';
@@ -44,7 +45,9 @@ import {
   validateMode,
 } from './security/validators';
 import { ChannelPluginAdapter } from '../channels/channel-plugin-adapter';
+import { FeishuChannelPlugin } from '../channels/feishu';
 import { getDefaultModelsForProvider, inferProtocolFromLegacy } from '../provider-catalog';
+import type { FeishuConfig, MessageListResult } from '../channels/feishu/types';
 
 /**
  * Extract the real platform chat_id from a potentially synthetic thread-session address.
@@ -72,6 +75,36 @@ interface BridgeModelOption {
 }
 
 const MODEL_CARD_PAGE_SIZE = 8;
+
+function getFeishuPlugin(
+  adapter: BaseChannelAdapter,
+): FeishuChannelPlugin | null {
+  if (!(adapter instanceof ChannelPluginAdapter)) return null;
+  const plugin = adapter.getPlugin();
+  return plugin instanceof FeishuChannelPlugin ? plugin : null;
+}
+
+function getFeishuRestClient(
+  adapter: BaseChannelAdapter,
+) {
+  const plugin = getFeishuPlugin(adapter);
+  return plugin?._gateway?.getRestClient() || null;
+}
+
+function getFeishuConfig(
+  adapter: BaseChannelAdapter,
+): FeishuConfig | null {
+  return getFeishuPlugin(adapter)?.getConfig() || null;
+}
+
+function extractTextFromMessageContent(content: string, fallbackLength: number): string {
+  try {
+    const parsed = JSON.parse(content) as { text?: string };
+    return (parsed.text ?? '').slice(0, fallbackLength);
+  } catch {
+    return content.slice(0, fallbackLength);
+  }
+}
 
 function dedupeBridgeModelOptions(options: BridgeModelOption[]): BridgeModelOption[] {
   const seen = new Set<string>();
@@ -936,9 +969,9 @@ async function handleMessage(
   }
 
   // Build onToolEvent callback for card tool progress
-  let onToolEvent: ((event: any) => void) | undefined;
+  let onToolEvent: OnToolEvent | undefined;
   if (cardController) {
-    onToolEvent = (event: any) => {
+    onToolEvent = (event) => {
       if (event.type === 'tool_use') {
         cardToolCalls.push({ id: event.id, name: event.name, status: 'running' });
       } else if (event.type === 'tool_result') {
@@ -1166,7 +1199,7 @@ async function handleCommand(
       // directories across this channel type (not isolated per chat).
       // If multi-user / chat-level isolation is needed in the future,
       // this should be scoped by userId or chatId instead.
-      const bindings = router.listBindings(msg.address.channelType as any);
+      const bindings = router.listBindings(msg.address.channelType);
       const uniqueDirs = [...new Set(
         bindings
           .filter((b) => b.active)
@@ -1333,15 +1366,15 @@ async function handleCommand(
         response = 'History is not supported for this channel type.';
         break;
       }
-      const plugin = adapter.getPlugin();
-      if (!plugin.getCardStreamController && !(plugin as any).meta?.channelType) {
+      const plugin = getFeishuPlugin(adapter);
+      if (!plugin) {
         response = 'History is not available.';
         break;
       }
       // Use message-actions if the plugin has Feishu-type capabilities
       try {
         const { readMessages, readThreadMessages } = await import('../channels/feishu/message-actions');
-        const restClient = (plugin as any).gateway?.getRestClient?.();
+        const restClient = getFeishuRestClient(adapter);
         if (!restClient) {
           response = 'Channel not connected.';
           break;
@@ -1350,7 +1383,7 @@ async function handleCommand(
         const chatIdRaw = msg.address.chatId;
         const threadIdx = chatIdRaw.indexOf(':thread:');
 
-        let result;
+        let result: MessageListResult;
         if (threadIdx >= 0) {
           // Thread history: extract thread ID and use readThreadMessages
           const threadId = chatIdRaw.slice(threadIdx + ':thread:'.length);
@@ -1368,8 +1401,7 @@ async function handleCommand(
             const time = item.createTime ? new Date(parseInt(item.createTime, 10) * 1000).toLocaleString() : '?';
             let content = '';
             try {
-              const parsed = JSON.parse(item.content);
-              content = (parsed.text ?? '').slice(0, 80);
+              content = extractTextFromMessageContent(item.content, 80);
             } catch {
               content = item.content.slice(0, 80);
             }
@@ -1398,8 +1430,7 @@ async function handleCommand(
       }
       try {
         const { searchMessages } = await import('../channels/feishu/message-actions');
-        const plugin = adapter.getPlugin();
-        const restClient = (plugin as any).gateway?.getRestClient?.();
+        const restClient = getFeishuRestClient(adapter);
         if (!restClient) {
           response = 'Channel not connected.';
           break;
@@ -1414,8 +1445,7 @@ async function handleCommand(
             const time = item.createTime ? new Date(parseInt(item.createTime, 10) * 1000).toLocaleString() : '?';
             let content = '';
             try {
-              const parsed = JSON.parse(item.content);
-              content = (parsed.text ?? '').slice(0, 100);
+              content = extractTextFromMessageContent(item.content, 100);
             } catch {
               content = item.content.slice(0, 100);
             }
@@ -1440,8 +1470,12 @@ async function handleCommand(
             response = 'This command is only available in Feishu channels.';
             break;
           }
-          const plugin = adapter.getPlugin();
-          const config = (plugin as any).getConfig?.();
+          const plugin = getFeishuPlugin(adapter);
+          const config = getFeishuConfig(adapter);
+          if (!plugin) {
+            response = 'This command is only available in Feishu channels.';
+            break;
+          }
           if (!config) {
             response = '❌ Feishu plugin not configured.\n\nPlease set App ID and App Secret in CodePilot settings, or use /feishu auth.';
             break;
@@ -1470,8 +1504,7 @@ async function handleCommand(
             response = 'This command is only available in Feishu channels.';
             break;
           }
-          const plugin = adapter.getPlugin();
-          const config = (plugin as any).getConfig?.();
+          const config = getFeishuConfig(adapter);
           if (!config) {
             response = '❌ App credentials not configured.\n\nPlease configure App ID and App Secret in CodePilot Settings → Bridge → Feishu.';
             break;
@@ -1498,8 +1531,12 @@ async function handleCommand(
             response = 'This command is only available in Feishu channels.';
             break;
           }
-          const plugin = adapter.getPlugin();
-          const config = (plugin as any).getConfig?.();
+          const plugin = getFeishuPlugin(adapter);
+          const config = getFeishuConfig(adapter);
+          if (!plugin) {
+            response = 'This command is only available in Feishu channels.';
+            break;
+          }
           const lines = ['🔍 Feishu Doctor', ''];
 
           // Config check

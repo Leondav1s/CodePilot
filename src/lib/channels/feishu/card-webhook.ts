@@ -7,7 +7,29 @@ import type { FeishuConfig } from './types';
 const LOG_TAG = '[feishu/card-webhook]';
 const EMPTY_JSON_RESPONSE = {};
 
-function toInboundMessage(event: any): InboundMessage | null {
+interface CardActionValue {
+  chatId?: string;
+  callback_data?: string;
+  action?: string;
+  operation_id?: string;
+}
+
+interface CardActionEvent {
+  action?: {
+    value?: CardActionValue;
+  };
+  context?: {
+    open_chat_id?: string;
+    open_message_id?: string;
+  };
+  open_message_id?: string;
+  operator?: {
+    open_id?: string;
+  };
+  open_id?: string;
+}
+
+function toInboundMessage(event: CardActionEvent): InboundMessage | null {
   const value = event?.action?.value ?? {};
   const chatId = event?.context?.open_chat_id || value.chatId || '';
   const messageId = event?.context?.open_message_id || event?.open_message_id || '';
@@ -65,7 +87,7 @@ export class FeishuCardWebhookServer {
         encryptKey: this.config.cardWebhook.encryptKey || '',
         verificationToken: this.config.cardWebhook.verificationToken || '',
       },
-      async (data: any) => {
+      async (data: CardActionEvent) => {
         const msg = toInboundMessage(data);
         if (msg) {
           this.onInboundMessage(msg);

@@ -8,10 +8,23 @@ import http from 'node:http';
 import https from 'node:https';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { getProxyForUrl } from 'proxy-from-env';
 import type { SSEEvent } from '@/types';
 import { resolveProvider as resolveProviderUnified, toAiSdkConfig } from './provider-resolver';
 
-const { getProxyForUrl } = require('proxy-from-env') as { getProxyForUrl: (url: string) => string };
+interface OpenAICompatibleStreamPart {
+  text?: string;
+}
+
+interface OpenAICompatibleChoice {
+  delta?: {
+    content?: string | Array<string | OpenAICompatibleStreamPart>;
+  };
+}
+
+interface OpenAICompatibleChunk {
+  choices?: OpenAICompatibleChoice[];
+}
 
 export interface StreamTextParams {
   providerId: string;
@@ -151,14 +164,17 @@ async function* streamOpenAICompatibleText(params: {
       const data = line.slice(5).trim();
       if (!data || data === '[DONE]') continue;
 
-      let parsed: any;
+      let parsed: unknown;
       try {
         parsed = JSON.parse(data);
       } catch {
         continue;
       }
 
-      const choices = Array.isArray(parsed?.choices) ? parsed.choices : [];
+      const parsedRecord = typeof parsed === 'object' && parsed !== null
+        ? parsed as OpenAICompatibleChunk
+        : {};
+      const choices = Array.isArray(parsedRecord.choices) ? parsedRecord.choices : [];
       for (const choice of choices) {
         const delta = choice?.delta?.content;
         if (typeof delta === 'string' && delta) {
@@ -169,7 +185,7 @@ async function* streamOpenAICompatibleText(params: {
           for (const part of delta) {
             if (typeof part === 'string' && part) {
               yield part;
-            } else if (typeof part?.text === 'string' && part.text) {
+            } else if (typeof part !== 'string' && typeof part.text === 'string' && part.text) {
               yield part.text;
             }
           }

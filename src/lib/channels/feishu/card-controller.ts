@@ -33,6 +33,37 @@ interface CardState {
   thinking: boolean;
 }
 
+interface CardCreateResponse {
+  data?: {
+    card_id?: string;
+  };
+}
+
+interface MessageResponse {
+  data?: {
+    message_id?: string;
+  };
+}
+
+type CardKitClient = lark.Client & {
+  cardkit: {
+    v2: {
+      card: {
+        create(payload: { data: { type: string; data: string } }): Promise<CardCreateResponse>;
+        streamContent(payload: { path: { card_id: string }; data: { content: string; sequence: number } }): Promise<unknown>;
+        setStreamingMode(payload: { path: { card_id: string }; data: { streaming_mode: boolean; sequence: number } }): Promise<unknown>;
+        update(payload: { path: { card_id: string }; data: { type: string; data: string; sequence: number } }): Promise<unknown>;
+      };
+    };
+  };
+};
+
+type CardElement = Record<string, unknown>;
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Format elapsed time for footer display */
 function formatElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -84,7 +115,8 @@ class FeishuCardStreamController implements CardStreamController {
         },
       };
 
-      const createResp = await (this.client as any).cardkit.v2.card.create({
+      const cardClient = this.client as unknown as CardKitClient;
+      const createResp = await cardClient.cardkit.v2.card.create({
         data: { type: 'card_json', data: JSON.stringify(cardBody) },
       });
       const cardId = createResp?.data?.card_id;
@@ -95,7 +127,7 @@ class FeishuCardStreamController implements CardStreamController {
 
       // 2. Send card as IM message
       const cardContent = JSON.stringify({ type: 'card', data: { card_id: cardId } });
-      let msgResp: any;
+      let msgResp: MessageResponse;
       if (replyToMessageId) {
         msgResp = await this.client.im.message.reply({
           path: { message_id: replyToMessageId },
@@ -122,8 +154,8 @@ class FeishuCardStreamController implements CardStreamController {
       });
 
       return messageId;
-    } catch (err: any) {
-      console.error(LOG_TAG, 'Card create failed:', err?.message || err);
+    } catch (err: unknown) {
+      console.error(LOG_TAG, 'Card create failed:', getErrorMessage(err));
       return '';
     }
   }
@@ -169,14 +201,15 @@ class FeishuCardStreamController implements CardStreamController {
 
     try {
       state.sequence++;
-      await (this.client as any).cardkit.v2.card.streamContent({
+      const cardClient = this.client as unknown as CardKitClient;
+      await cardClient.cardkit.v2.card.streamContent({
         path: { card_id: state.cardId },
         data: { content, sequence: state.sequence },
       });
       state.lastUpdateAt = Date.now();
       return 'ok';
-    } catch (err: any) {
-      console.error(LOG_TAG, 'Stream update failed:', err?.message || err);
+    } catch (err: unknown) {
+      console.error(LOG_TAG, 'Stream update failed:', getErrorMessage(err));
       return 'fail';
     }
   }
@@ -223,13 +256,14 @@ class FeishuCardStreamController implements CardStreamController {
     try {
       // Close streaming mode
       state.sequence++;
-      await (this.client as any).cardkit.v2.card.setStreamingMode({
+      const cardClient = this.client as unknown as CardKitClient;
+      await cardClient.cardkit.v2.card.setStreamingMode({
         path: { card_id: state.cardId },
         data: { streaming_mode: false, sequence: state.sequence },
       });
 
       // Build final card elements
-      const elements: any[] = [];
+      const elements: CardElement[] = [];
 
       // Main content (optimize markdown for Feishu rendering)
       elements.push({
@@ -288,12 +322,12 @@ class FeishuCardStreamController implements CardStreamController {
       };
 
       state.sequence++;
-      await (this.client as any).cardkit.v2.card.update({
+      await cardClient.cardkit.v2.card.update({
         path: { card_id: state.cardId },
         data: { type: 'card_json', data: JSON.stringify(finalCard), sequence: state.sequence },
       });
-    } catch (err: any) {
-      console.error(LOG_TAG, 'Finalize failed:', err?.message || err);
+    } catch (err: unknown) {
+      console.error(LOG_TAG, 'Finalize failed:', getErrorMessage(err));
     }
 
     this.cards.delete(messageId);

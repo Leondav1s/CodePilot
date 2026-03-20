@@ -21,6 +21,54 @@ interface SearchOptions {
   pageToken?: string;
 }
 
+interface RawFeishuMessageItem {
+  message_id?: string;
+  root_id?: string;
+  parent_id?: string;
+  msg_type?: string;
+  create_time?: string;
+  update_time?: string;
+  body?: {
+    content?: string;
+  };
+  sender?: {
+    id?: string;
+    id_type?: string;
+    sender_type?: string;
+    tenant_key?: string;
+  };
+}
+
+interface FeishuMessageListResponse {
+  data?: {
+    items?: RawFeishuMessageItem[];
+    has_more?: boolean;
+    page_token?: string;
+  };
+}
+
+function normalizeMessageItem(item: RawFeishuMessageItem): FeishuMessageItem {
+  return {
+    messageId: item.message_id || '',
+    rootId: item.root_id || undefined,
+    parentId: item.parent_id || undefined,
+    msgType: item.msg_type || '',
+    createTime: item.create_time || '',
+    updateTime: item.update_time || undefined,
+    content: item.body?.content || '',
+    sender: {
+      id: item.sender?.id || '',
+      idType: item.sender?.id_type || '',
+      senderType: item.sender?.sender_type || '',
+      tenantKey: item.sender?.tenant_key || undefined,
+    },
+  };
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Read recent messages from a Feishu chat using bot identity (app_access_token).
  *
@@ -44,29 +92,16 @@ export async function readMessages(
       },
     });
 
-    const items: FeishuMessageItem[] = (resp?.data?.items || []).map((item: any) => ({
-      messageId: item.message_id || '',
-      rootId: item.root_id || undefined,
-      parentId: item.parent_id || undefined,
-      msgType: item.msg_type || '',
-      createTime: item.create_time || '',
-      updateTime: item.update_time || undefined,
-      content: item.body?.content || '',
-      sender: {
-        id: item.sender?.id || '',
-        idType: item.sender?.id_type || '',
-        senderType: item.sender?.sender_type || '',
-        tenantKey: item.sender?.tenant_key || undefined,
-      },
-    }));
+    const messageResp = resp as FeishuMessageListResponse;
+    const items: FeishuMessageItem[] = (messageResp.data?.items || []).map(normalizeMessageItem);
 
     return {
       items,
-      hasMore: resp?.data?.has_more || false,
-      pageToken: resp?.data?.page_token || undefined,
+      hasMore: messageResp.data?.has_more || false,
+      pageToken: messageResp.data?.page_token || undefined,
     };
-  } catch (err: any) {
-    console.error('[feishu/message-actions] readMessages failed:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('[feishu/message-actions] readMessages failed:', getErrorMessage(err));
     return { items: [], hasMore: false };
   }
 }
@@ -94,29 +129,16 @@ export async function readThreadMessages(
       },
     });
 
-    const items: FeishuMessageItem[] = (resp?.data?.items || []).map((item: any) => ({
-      messageId: item.message_id || '',
-      rootId: item.root_id || undefined,
-      parentId: item.parent_id || undefined,
-      msgType: item.msg_type || '',
-      createTime: item.create_time || '',
-      updateTime: item.update_time || undefined,
-      content: item.body?.content || '',
-      sender: {
-        id: item.sender?.id || '',
-        idType: item.sender?.id_type || '',
-        senderType: item.sender?.sender_type || '',
-        tenantKey: item.sender?.tenant_key || undefined,
-      },
-    }));
+    const messageResp = resp as FeishuMessageListResponse;
+    const items: FeishuMessageItem[] = (messageResp.data?.items || []).map(normalizeMessageItem);
 
     return {
       items,
-      hasMore: resp?.data?.has_more || false,
-      pageToken: resp?.data?.page_token || undefined,
+      hasMore: messageResp.data?.has_more || false,
+      pageToken: messageResp.data?.page_token || undefined,
     };
-  } catch (err: any) {
-    console.error('[feishu/message-actions] readThreadMessages failed:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('[feishu/message-actions] readThreadMessages failed:', getErrorMessage(err));
     return { items: [], hasMore: false };
   }
 }
@@ -145,26 +167,13 @@ export async function searchMessagesLocal(
         container_id_type: 'chat',
         container_id: chatId,
         page_size: Math.min(pageSize * 5, 50), // fetch more to filter
-        sort_type: 'ByCreateTimeDesc' as any,
+        sort_type: 'ByCreateTimeDesc',
         ...(pageToken ? { page_token: pageToken } : {}),
       },
     });
 
-    const allItems: FeishuMessageItem[] = (resp?.data?.items || []).map((item: any) => ({
-      messageId: item.message_id || '',
-      rootId: item.root_id || undefined,
-      parentId: item.parent_id || undefined,
-      msgType: item.msg_type || '',
-      createTime: item.create_time || '',
-      updateTime: item.update_time || undefined,
-      content: item.body?.content || '',
-      sender: {
-        id: item.sender?.id || '',
-        idType: item.sender?.id_type || '',
-        senderType: item.sender?.sender_type || '',
-        tenantKey: item.sender?.tenant_key || undefined,
-      },
-    }));
+    const messageResp = resp as FeishuMessageListResponse;
+    const allItems: FeishuMessageItem[] = (messageResp.data?.items || []).map(normalizeMessageItem);
 
     // Client-side keyword filter
     const lowerQuery = query.toLowerCase();
@@ -181,8 +190,8 @@ export async function searchMessagesLocal(
       items: filtered,
       hasMore: false, // can't paginate client-side filter reliably
     };
-  } catch (err: any) {
-    console.error('[feishu/message-actions] searchMessagesLocal failed:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('[feishu/message-actions] searchMessagesLocal failed:', getErrorMessage(err));
     return { items: [], hasMore: false };
   }
 }
