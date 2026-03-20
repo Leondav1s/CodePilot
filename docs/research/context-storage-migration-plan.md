@@ -11,10 +11,10 @@
 - 运行态强依赖内存 Map，重启后不可恢复
 - 长会话 fallback 依赖固定窗口（最近 50 条），无压缩策略
 
-参考实现（本机路径）：
+参考实现（已脱敏）：
 
-- `/Users/op7418/Documents/code/资料/craft-agents-oss`
-- `/Users/op7418/Documents/code/资料/opencode`
+- `craft-agents-oss`
+- `opencode`
 
 ## 2. 现状问题摘要
 

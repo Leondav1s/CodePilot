@@ -203,6 +203,16 @@ When you set up a workspace, CodePilot creates four Markdown files at the **work
 Each Bridge channel (Telegram, Feishu, Discord, QQ) requires its own bot token or app credentials. Go to the **Bridge** page in the sidebar to configure channels. You will need to create a bot on the target platform first and provide the token to CodePilot.
 </details>
 
+<details>
+<summary>Bridge, Feishu, and Gemini behavior</summary>
+
+- Bridge sessions use the same model picker as regular chats. `/model` switches the active provider/model for that binding.
+- Claude Code / Anthropic-compatible providers run through the Claude Code SDK and can use tools, file edits, and permission prompts. Gemini text chat uses the Google generative text path, so it is text-only and does not act as a local execution agent.
+- `/mode code|plan|ask` changes the bridge permission profile. The desktop chat page also adds an extra Ask-mode system prompt, so Ask is stricter there than in Bridge.
+- Feishu uses `post` + `md` for simple replies. If the reply contains fenced code blocks or GFM tables, CodePilot upgrades it to an interactive card so the content stays readable. Tables inside cards are rendered as native Feishu table elements.
+- Quick use: configure the channel in **Bridge**, then send `/model` or `/mode` from the IM client when you need to switch behavior.
+</details>
+
 ---
 
 ## Community

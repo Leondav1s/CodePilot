@@ -28,9 +28,7 @@
 
 证据：
 
-- [src/app/api/plugins/mcp/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/route.ts#L81)
-- [src/components/plugins/McpServerEditor.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpServerEditor.tsx#L158)
-- [src/components/plugins/McpManager.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpManager.tsx#L144)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -52,9 +50,7 @@
 
 证据：
 
-- [src/app/api/plugins/mcp/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/route.ts#L43)
-- [src/app/api/plugins/mcp/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/route.ts#L61)
-- [src/app/api/plugins/mcp/%5Bname%5D/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/%5Bname%5D/route.ts#L30)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -76,8 +72,7 @@
 
 证据：
 
-- [src/app/api/plugins/mcp/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/route.ts#L12)
-- [src/app/api/plugins/mcp/%5Bname%5D/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/%5Bname%5D/route.ts#L7)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现只读写：
 
@@ -102,12 +97,7 @@
 
 证据：
 
-- [src/types/index.ts](/Users/op7418/Documents/code/opus-4.6-test/src/types/index.ts#L454)
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L97)
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L400)
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L541)
-- [node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts](/Users/op7418/Documents/code/opus-4.6-test/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts#L252)
-- [node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts](/Users/op7418/Documents/code/opus-4.6-test/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts#L1580)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 官方 custom tools 文档描述的是：
 
@@ -134,9 +124,7 @@
 
 证据：
 
-- [src/components/plugins/McpServerList.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpServerList.tsx#L41)
-- [src/components/plugins/McpServerList.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpServerList.tsx#L163)
-- [src/app/api/plugins/mcp/status/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/status/route.ts#L8)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -161,9 +149,7 @@
 
 证据：
 
-- [src/components/plugins/McpManager.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpManager.tsx#L53)
-- [src/app/api/plugins/mcp/status/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/plugins/mcp/status/route.ts#L8)
-- [src/components/plugins/McpServerList.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/plugins/McpServerList.tsx#L163)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -182,9 +168,7 @@
 
 证据：
 
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L797)
-- [src/types/index.ts](/Users/op7418/Documents/code/opus-4.6-test/src/types/index.ts#L389)
-- [node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts](/Users/op7418/Documents/code/opus-4.6-test/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts#L1593)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -209,8 +193,7 @@
 
 证据：
 
-- [src/components/chat/ToolCallBlock.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/ToolCallBlock.tsx#L32)
-- [src/components/chat/ToolCallBlock.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/ToolCallBlock.tsx#L57)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现里，工具分类只针对：
 

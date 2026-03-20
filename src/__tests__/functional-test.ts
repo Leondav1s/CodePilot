@@ -3,6 +3,7 @@
  * Run with: npx tsx src/__tests__/functional-test.ts
  */
 import { chromium, type Page, type BrowserContext } from 'playwright';
+import path from 'path';
 
 interface TestResult {
   category: string;
@@ -12,6 +13,9 @@ interface TestResult {
 }
 
 const results: TestResult[] = [];
+
+const screenshotPath = (name: string) =>
+  path.join(process.cwd(), 'src', '__tests__', 'screenshots', name);
 
 function record(category: string, name: string, status: 'PASS' | 'FAIL' | 'SKIP', details: string) {
   results.push({ category, name, status, details });
@@ -83,7 +87,7 @@ async function testLayoutAndNav(context: BrowserContext) {
     record('Layout', 'Theme toggle changes theme', themeChanged ? 'PASS' : 'FAIL', `Before: class="${htmlBefore}" style="${styleBefore}" | After: class="${htmlAfter}" style="${styleAfter}"`);
 
     // Take dark mode screenshot
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/dark-mode.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('dark-mode.png'), fullPage: true });
 
     // Toggle back
     await themeToggleBtn.click();
@@ -98,7 +102,7 @@ async function testLayoutAndNav(context: BrowserContext) {
   if (collapseCount > 0) {
     await collapseBtn.first().click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/sidebar-collapsed.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('sidebar-collapsed.png'), fullPage: true });
     record('Layout', 'Sidebar collapse button works', 'PASS', 'Clicked collapse button');
     // Expand again
     await collapseBtn.first().click();
@@ -116,7 +120,7 @@ async function testMobileResponsive(context: BrowserContext) {
   await page.goto('http://localhost:3000/chat', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
 
-  await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mobile-chat.png', fullPage: true });
+  await page.screenshot({ path: screenshotPath('mobile-chat.png'), fullPage: true });
 
   // Check if sidebar is hidden on mobile
   const sidebarEl = page.locator('aside, [class*="sidebar"]').first();
@@ -132,13 +136,13 @@ async function testMobileResponsive(context: BrowserContext) {
   // Test plugins page on mobile
   await page.goto('http://localhost:3000/plugins', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
-  await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mobile-plugins.png', fullPage: true });
+  await page.screenshot({ path: screenshotPath('mobile-plugins.png'), fullPage: true });
   record('Responsive', 'Plugins page renders on mobile', 'PASS', 'Screenshot taken');
 
   // Test settings page on mobile
   await page.goto('http://localhost:3000/settings', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
-  await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mobile-settings.png', fullPage: true });
+  await page.screenshot({ path: screenshotPath('mobile-settings.png'), fullPage: true });
   record('Responsive', 'Settings page renders on mobile', 'PASS', 'Screenshot taken');
 
   await page.close();
@@ -193,7 +197,7 @@ async function testChatFlow(context: BrowserContext) {
     record('Chat', 'Message appears after sending', messageCount > 0 ? 'PASS' : 'FAIL', `Found ${messageCount} message elements`);
 
     // Take screenshot of the chat after sending
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/chat-after-send.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('chat-after-send.png'), fullPage: true });
 
     // Check if URL changed (new conversation created)
     const urlAfterSend = page.url();
@@ -287,7 +291,7 @@ async function testMCPPage(context: BrowserContext) {
   if (hasAddBtn) {
     await addBtn.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mcp-add-dialog.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('mcp-add-dialog.png'), fullPage: true });
 
     const dialog = page.locator('[role="dialog"], [class*="dialog"], [class*="modal"]').first();
     const hasDialog = await dialog.isVisible().catch(() => false);
@@ -312,7 +316,7 @@ async function testMCPPage(context: BrowserContext) {
   if (hasTabs) {
     await jsonTab.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mcp-json-config.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('mcp-json-config.png'), fullPage: true });
 
     const jsonEditor = page.locator('textarea, [class*="editor"], [class*="json"], pre, code');
     const jsonEditorCount = await jsonEditor.count();
@@ -362,7 +366,7 @@ async function testSettings(context: BrowserContext) {
   if (hasEditorToggle) {
     await jsonBtn.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/settings-json-mode.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('settings-json-mode.png'), fullPage: true });
 
     const jsonTextarea = page.locator('textarea').first();
     const jsonVisible = await jsonTextarea.isVisible().catch(() => false);

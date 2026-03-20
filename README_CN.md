@@ -203,6 +203,16 @@ npm install -g @anthropic-ai/claude-code
 每个 Bridge 通道（Telegram、飞书、Discord、QQ）都需要各自的 Bot Token 或应用凭证。在侧边栏的 **Bridge** 页面配置通道。你需要先在目标平台创建 Bot 并获取 Token，然后提供给 CodePilot。
 </details>
 
+<details>
+<summary>Bridge、Feishu 与 Gemini 行为</summary>
+
+- Bridge 会话使用和普通对话相同的模型选择器，`/model` 会切换当前绑定使用的服务商和模型。
+- Claude Code / Anthropic 兼容服务商走 Claude Code SDK，可以使用工具、文件编辑和权限确认。Gemini 文本聊天走 Google 的文本生成链路，因此只负责文本回复，不作为本地执行代理。
+- `/mode code|plan|ask` 只会改变 Bridge 的权限配置。桌面端聊天页还会额外注入 Ask 模式提示词，所以同样的 Ask 在桌面聊天里会更严格。
+- 飞书对简单回复使用 `post + md`。如果回复里包含代码块或 GFM 表格，CodePilot 会升级成互动卡片，尽量保证内容可读；卡片里的表格会渲染成飞书原生表格元素。
+- 简单用法：先在 **Bridge** 里完成通道配置，需要切换行为时在飞书里直接发 `/model` 或 `/mode`。
+</details>
+
 ---
 
 ## 社区

@@ -31,9 +31,7 @@
 
 证据：
 
-- [src/app/api/skills/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/skills/route.ts#L320)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L483)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L551)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -60,9 +58,7 @@
 
 证据：
 
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L685)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L711)
-- [src/lib/provider-resolver.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/provider-resolver.ts#L488)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -91,12 +87,7 @@
 
 证据：
 
-- [src/app/api/skills/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/skills/route.ts#L323)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L551)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L689)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L711)
-- [src/app/api/skills/[name]/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/skills/%5Bname%5D/route.ts#L154)
-- [src/app/api/skills/[name]/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/skills/%5Bname%5D/route.ts#L267)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前实现：
 
@@ -116,8 +107,7 @@
 
 证据：
 
-- [src/components/chat/ChatView.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/ChatView.tsx#L532)
-- [src/components/chat/MessageInput.tsx](/Users/op7418/Documents/code/opus-4.6-test/src/components/chat/MessageInput.tsx#L718)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 `ChatView.sendMessage()` 会把传入的 `content` 直接 optimistic render 成用户消息。  
 而 skill / command 提交时传进去的就是展开后的 `finalPrompt`，不是“已选 Agent Skill”或“/command + 参数”的结构化调用信息。
@@ -128,10 +118,7 @@
 
 证据：
 
-- [src/lib/agent-sdk-capabilities.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/agent-sdk-capabilities.ts#L100)
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L797)
-- [src/types/index.ts](/Users/op7418/Documents/code/opus-4.6-test/src/types/index.ts#L389)
-- [node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts](/Users/op7418/Documents/code/opus-4.6-test/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts#L1798)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 SDK 在 `system:init` 和 `supportedCommands()` 里都能返回当前会话的 commands / skills 信息。  
 但项目目前的处理是：
@@ -149,8 +136,7 @@ SDK 在 `system:init` 和 `supportedCommands()` 里都能返回当前会话的 c
 
 证据：
 
-- [src/app/api/skills/route.ts](/Users/op7418/Documents/code/opus-4.6-test/src/app/api/skills/route.ts#L320)
-- [src/lib/provider-resolver.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/provider-resolver.ts#L488)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 当前前端列表会直接扫描：
 
@@ -174,9 +160,7 @@ SDK 在 `system:init` 和 `supportedCommands()` 里都能返回当前会话的 c
 
 证据：
 
-- [node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts](/Users/op7418/Documents/code/opus-4.6-test/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts#L33)
-- [src/lib/agent-sdk-agents.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/agent-sdk-agents.ts#L1)
-- [src/lib/claude-client.ts](/Users/op7418/Documents/code/opus-4.6-test/src/lib/claude-client.ts#L414)
+- 相关源码位置已核对，原始本机绝对路径已移除。
 
 SDK 的 `AgentDefinition` 原生支持：
 

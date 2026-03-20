@@ -6,6 +6,7 @@
  * Tests basic page rendering for all routes.
  */
 import { chromium } from 'playwright';
+import path from 'path';
 
 interface TestResult {
   name: string;
@@ -19,6 +20,8 @@ async function runSmokeTests() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const results: TestResult[] = [];
+  const screenshotPath = (name: string) =>
+    path.join(process.cwd(), 'src', '__tests__', 'screenshots', name);
 
   const routes = [
     { name: 'Home redirect', url: 'http://localhost:3000/', expectRedirectTo: '/chat' },
@@ -78,7 +81,7 @@ async function runSmokeTests() {
 
       // Take screenshot
       const screenshotName = route.name.toLowerCase().replace(/\s+/g, '-');
-      await page.screenshot({ path: `/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/${screenshotName}.png`, fullPage: true });
+      await page.screenshot({ path: screenshotPath(`${screenshotName}.png`), fullPage: true });
 
       results.push({ name: route.name, status: 'PASS', details, consoleErrors, loadTimeMs: elapsed });
     } catch (err: unknown) {

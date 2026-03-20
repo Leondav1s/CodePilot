@@ -3,6 +3,10 @@
  * Run with: npx tsx src/__tests__/targeted-test.ts
  */
 import { chromium, type Page } from 'playwright';
+import path from 'path';
+
+const screenshotPath = (name: string) =>
+  path.join(process.cwd(), 'src', '__tests__', 'screenshots', name);
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
@@ -27,7 +31,7 @@ async function main() {
     // Close sidebar via X
     await closeBtn.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mobile-sidebar-closed.png' });
+    await page.screenshot({ path: screenshotPath('mobile-sidebar-closed.png') });
 
     // Now check if there's a way to reopen the sidebar (the toggle button in header)
     const headerToggle = page.locator('header button').first();
@@ -37,7 +41,7 @@ async function main() {
     // Click header toggle to reopen sidebar
     await headerToggle.click();
     await page.waitForTimeout(500);
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/mobile-sidebar-reopened.png' });
+    await page.screenshot({ path: screenshotPath('mobile-sidebar-reopened.png') });
 
     // Check sidebar is visible again
     const sidebarVisible = await page.locator('aside').isVisible();
@@ -79,7 +83,7 @@ async function main() {
     const chatLinks = await page.locator('aside a[href*="/chat/"]').count();
     console.log('Chat links in sidebar:', chatLinks);
 
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/chat-after-complete.png' });
+    await page.screenshot({ path: screenshotPath('chat-after-complete.png') });
 
     await context.close();
   }
@@ -173,7 +177,7 @@ async function main() {
     const sidebarAfter = await page.locator('aside').boundingBox();
     console.log('Sidebar after toggle:', sidebarAfter ? `x=${sidebarAfter.x} w=${sidebarAfter.width}` : 'hidden/not found');
 
-    await page.screenshot({ path: '/Users/op7418/Documents/code/opus-4.6-test/src/__tests__/screenshots/desktop-sidebar-collapsed.png' });
+    await page.screenshot({ path: screenshotPath('desktop-sidebar-collapsed.png') });
 
     // Click to expand
     await headerToggle.click();
