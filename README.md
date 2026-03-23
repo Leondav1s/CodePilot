@@ -46,60 +46,11 @@
 - Markdown 表格会优先转换成更适合飞书展示的卡片/结构化内容，减少内容丢失
 - 保留了飞书作为企业 IM 入口时更常见的中文工作流
 
-### 4. 更适合企业内网或自定义网关
+### 4. 自定义网关
 
 - 更方便接入 Anthropic-compatible / OpenAI-compatible 的自定义网关
-- 对企业内网模型网关、模型别名映射和多 Provider 并存场景做了更多兼容
 - 更适合同时混用 Claude、Gemini、企业代理模型和自定义模型列表
 
-### 5. 修过一轮本地打包与发布链路
-
-- 修复了 Electron 打包后 standalone 输出路径嵌套导致的 `server.js` 缺失问题
-- 补通了 macOS 本地构建和 GitHub Actions 发布流程
-- 让这一分支更容易直接产出可安装的 DMG / 桌面应用
-
-## 核心能力
-
-### 桌面工作台
-
-- Claude Code 风格的本地桌面客户端
-- Code / Plan / Ask 多种交互模式
-- 会话暂停、恢复、回退、归档
-- 双会话分屏
-- 项目文件浏览、附件和多模态输入
-
-### 扩展能力
-
-- 多 Provider 支持
-- MCP 服务器接入
-- Skills 技能体系
-- CLI 会话导入
-- 本地 SQLite 存储
-
-### 桥接能力
-
-- Telegram / 飞书 / Discord / QQ
-- 桥接会话与桌面会话共用模型体系
-- 更适合把外部 IM 当成本地执行入口
-
-## 下载与安装
-
-直接从本仓库的 [Releases](https://github.com/Leondav1s/CodePilot/releases) 页面下载对应平台的安装包。
-
-支持平台：
-
-- macOS：`.dmg`
-- Windows：`.exe`
-- Linux：`.AppImage` / `.deb` / `.rpm`
-
-首次使用前，建议先确保本机已安装并可运行：
-
-```bash
-npm install -g @anthropic-ai/claude-code
-claude login
-```
-
-如果你主要依赖自定义 Provider，也可以在应用内自行配置对应的网关地址、模型和认证信息。
 
 ## 快速开始
 
