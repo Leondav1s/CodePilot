@@ -119,13 +119,14 @@ jobs:
 
       - name: Package for macOS (x64 + arm64, sign only)
         timeout-minutes: 15
-        env:
-          CSC_LINK: /tmp/cert.p12
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
         run: |
           if [ "${HAS_CERT}" = "true" ]; then
+            export CSC_LINK=/tmp/cert.p12
+            export CSC_KEY_PASSWORD="${{ secrets.MAC_CERT_PASSWORD }}"
             npx electron-builder --mac --config electron-builder.yml --publish never
           else
+            unset CSC_LINK
+            unset CSC_KEY_PASSWORD
             CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --config electron-builder.yml --publish never
           fi
 
