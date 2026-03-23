@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import type { ToolUIPart } from 'ai';
 import type { PermissionRequestEvent } from '@/types';
 
@@ -39,6 +40,10 @@ interface PermissionPromptProps {
   toolUses?: ToolUseInfo[];
   permissionProfile?: 'default' | 'full_access';
 }
+
+/** Max lines to show in the tool input area before collapsing */
+const MAX_INPUT_LINES = 8;
+const MAX_INPUT_CHARS = 500;
 
 function AskUserQuestionUI({
   toolInput,
@@ -310,6 +315,66 @@ function ExitPlanModeUI({
   );
 }
 
+/**
+ * Collapsible tool input display with truncation for long content.
+ */
+function ToolInputDisplay({ input }: { input: Record<string, unknown> }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const formatToolInput = (inp: Record<string, unknown>): string => {
+    // For Bash, show command prominently
+    if (inp.command) {
+      const cmd = String(inp.command);
+      // If there are other keys besides command/description, show full JSON
+      const extraKeys = Object.keys(inp).filter(k => k !== 'command' && k !== 'description');
+      if (extraKeys.length > 0) {
+        return JSON.stringify(inp, null, 2);
+      }
+      return cmd;
+    }
+    // For Write/Edit, show the full input so content/old_string/new_string are visible
+    if (inp.file_path) {
+      const keys = Object.keys(inp);
+      if (keys.length === 1) return String(inp.file_path);
+      return JSON.stringify(inp, null, 2);
+    }
+    if (inp.path) {
+      const keys = Object.keys(inp);
+      if (keys.length === 1) return String(inp.path);
+      return JSON.stringify(inp, null, 2);
+    }
+    return JSON.stringify(inp, null, 2);
+  };
+
+  const formatted = formatToolInput(input);
+  const lineCount = formatted.split('\n').length;
+  const isTruncated = lineCount > MAX_INPUT_LINES || formatted.length > MAX_INPUT_CHARS;
+
+  const displayText = !expanded && isTruncated
+    ? formatted.slice(0, MAX_INPUT_CHARS).split('\n').slice(0, MAX_INPUT_LINES).join('\n') + '\n…'
+    : formatted;
+
+  return (
+    <div className="mt-1 overflow-hidden rounded bg-muted/50">
+      <pre className={cn(
+        "overflow-x-auto whitespace-pre-wrap break-all px-3 py-2 font-mono text-xs",
+        !expanded && "max-h-[10rem]"
+      )}>
+        {displayText}
+      </pre>
+      {isTruncated && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="w-full border-t border-border/30 px-3 py-1 text-[10px] text-muted-foreground hover:bg-muted/80 transition-colors"
+        >
+          {expanded ? '▲ Collapse' : '▼ Show more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PermissionPrompt({
   pendingPermission,
   permissionResolved,
@@ -339,6 +404,11 @@ export function PermissionPrompt({
   // Nothing to show
   if (!pendingPermission && !permissionResolved) return null;
 
+  // Only show the resolved status text (not the full UI) when already resolved.
+  // This prevents stacking — once resolved, we show a minimal status line that
+  // auto-hides quickly (the stream-session-manager clears it after 1s).
+  const isResolved = !!permissionResolved;
+
   const getConfirmationState = (): ToolUIPart['state'] => {
     if (permissionResolved) return 'approval-responded';
     if (pendingPermission) return 'approval-requested';
@@ -356,17 +426,10 @@ export function PermissionPrompt({
     return { id: pendingPermission?.permissionRequestId || '' };
   };
 
-  const formatToolInput = (input: Record<string, unknown>): string => {
-    if (input.command) return String(input.command);
-    if (input.file_path) return String(input.file_path);
-    if (input.path) return String(input.path);
-    return JSON.stringify(input, null, 2);
-  };
-
   return (
-    <div className="mx-auto w-full max-w-3xl border-t border-border bg-background px-4 py-3">
+    <div className="mx-auto w-full max-w-3xl border-t border-border bg-background px-4 py-3 max-h-[50vh] overflow-y-auto">
       {/* ExitPlanMode */}
-      {pendingPermission?.toolName === 'ExitPlanMode' && !permissionResolved && (
+      {pendingPermission?.toolName === 'ExitPlanMode' && !isResolved && (
         <ExitPlanModeUI
           toolInput={pendingPermission.toolInput as Record<string, unknown>}
           toolUses={toolUses}
@@ -383,36 +446,32 @@ export function PermissionPrompt({
       )}
 
       {/* AskUserQuestion */}
-      {pendingPermission?.toolName === 'AskUserQuestion' && !permissionResolved && (
+      {pendingPermission?.toolName === 'AskUserQuestion' && !isResolved && (
         <AskUserQuestionUI
           toolInput={pendingPermission.toolInput as Record<string, unknown>}
           onSubmit={(decision, updatedInput) => onPermissionResponse(decision, updatedInput)}
         />
       )}
-      {pendingPermission?.toolName === 'AskUserQuestion' && permissionResolved && (
+      {pendingPermission?.toolName === 'AskUserQuestion' && isResolved && (
         <p className="py-1 text-xs text-status-success-foreground">Answer submitted</p>
       )}
 
-      {/* Generic confirmation for other tools */}
-      {pendingPermission?.toolName !== 'AskUserQuestion' && pendingPermission?.toolName !== 'ExitPlanMode' && (pendingPermission || permissionResolved) && (
+      {/* Generic confirmation for other tools — only show when not yet resolved */}
+      {pendingPermission?.toolName !== 'AskUserQuestion' && pendingPermission?.toolName !== 'ExitPlanMode' && pendingPermission && !isResolved && (
         <Confirmation
           approval={getApproval()}
           state={getConfirmationState()}
         >
           <ConfirmationTitle>
-            <span className="font-medium">{pendingPermission?.toolName}</span>
-            {pendingPermission?.decisionReason && (
+            <span className="font-medium">{pendingPermission.toolName}</span>
+            {pendingPermission.decisionReason && (
               <span className="text-muted-foreground ml-2">
                 — {pendingPermission.decisionReason}
               </span>
             )}
           </ConfirmationTitle>
 
-          {pendingPermission && (
-            <div className="mt-1 rounded bg-muted/50 px-3 py-2 font-mono text-xs">
-              {formatToolInput(pendingPermission.toolInput)}
-            </div>
-          )}
+          <ToolInputDisplay input={pendingPermission.toolInput} />
 
           <ConfirmationRequest>
             <ConfirmationActions>
@@ -428,7 +487,7 @@ export function PermissionPrompt({
               >
                 Allow Once
               </ConfirmationAction>
-              {pendingPermission?.suggestions && pendingPermission.suggestions.length > 0 && (
+              {pendingPermission.suggestions && pendingPermission.suggestions.length > 0 && (
                 <ConfirmationAction
                   variant="default"
                   onClick={() => onPermissionResponse('allow_session')}
@@ -447,6 +506,16 @@ export function PermissionPrompt({
             <p className="text-xs text-status-error-foreground">{t('streaming.denied')}</p>
           </ConfirmationRejected>
         </Confirmation>
+      )}
+
+      {/* Resolved status for generic tools — minimal one-liner */}
+      {pendingPermission?.toolName !== 'AskUserQuestion' && pendingPermission?.toolName !== 'ExitPlanMode' && isResolved && (
+        <p className={cn(
+          "py-1 text-xs",
+          permissionResolved === 'allow' ? 'text-status-success-foreground' : 'text-status-error-foreground'
+        )}>
+          {permissionResolved === 'allow' ? t('streaming.allowed') : t('streaming.denied')}
+        </p>
       )}
     </div>
   );

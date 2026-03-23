@@ -30,5 +30,15 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "electron", "dist-electron", "scripts", "release", "apps", "packages"]
+  "exclude": [
+    "node_modules",
+    "electron",
+    "dist-electron",
+    "scripts",
+    "release",
+    "apps",
+    "packages",
+    ".claude",
+    "资料"
+  ]
 }

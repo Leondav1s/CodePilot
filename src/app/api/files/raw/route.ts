@@ -1,9 +1,15 @@
 import { NextRequest } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function isPathSafe(base: string, target: string): boolean {
+  const normalizedBase = base.endsWith(path.sep) ? base : base + path.sep;
+  return target === base || target.startsWith(normalizedBase);
+}
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -79,8 +85,8 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
- * Serve raw file content from the user's home directory.
- * Security: only allows reading files within the user's home directory.
+ * Serve raw file content.
+ * Security: restricts to user's home directory to prevent arbitrary file reads.
  */
 export async function GET(request: NextRequest) {
   const filePath = request.nextUrl.searchParams.get('path');
@@ -93,6 +99,15 @@ export async function GET(request: NextRequest) {
   }
 
   const resolved = path.resolve(filePath);
+  const homeDir = os.homedir();
+
+  // Only allow reading files within the user's home directory
+  if (!isPathSafe(homeDir, resolved)) {
+    return new Response(JSON.stringify({ error: 'File is outside the allowed scope' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
     await fs.access(resolved);

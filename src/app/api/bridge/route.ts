@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'start') {
-      await bridgeManager.start();
-      return Response.json({ ok: true, status: bridgeManager.getStatus() });
+      const result = await bridgeManager.start();
+      return Response.json({ ok: result.started, reason: result.reason, status: bridgeManager.getStatus() });
     } else if (action === 'stop') {
       await bridgeManager.stop();
       return Response.json({ ok: true, status: bridgeManager.getStatus() });

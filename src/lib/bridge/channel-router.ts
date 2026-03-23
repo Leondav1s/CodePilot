@@ -15,18 +15,69 @@ import {
   createSession,
   getSetting,
   updateSessionProviderId,
+  updateSessionWorkingDirectory,
+  updateSdkSessionId,
 } from '../db';
+import { resolveWorkingDirectory } from '../working-directory';
+
+function shouldResetResumeForSource(source: string): boolean {
+  return source === 'setting' || source === 'home' || source === 'process';
+}
 
 /**
  * Resolve an inbound address to a ChannelBinding.
  * If no binding exists, auto-creates a new session and binding.
+ * Self-heals stale workingDirectory / sdkSessionId in existing bindings.
  */
 export function resolve(address: ChannelAddress): ChannelBinding {
   const existing = getChannelBinding(address.channelType, address.chatId);
   if (existing) {
-    // Verify the linked session still exists; if not, create a new one
     const session = getSession(existing.codepilotSessionId);
-    if (session) return existing;
+    if (session) {
+      const resolved = resolveWorkingDirectory([
+        { path: session.sdk_cwd, source: 'session_sdk_cwd' },
+        { path: existing.workingDirectory, source: 'binding' },
+        { path: session.working_directory, source: 'session_working_directory' },
+        { path: getSetting('bridge_default_work_dir'), source: 'setting' },
+      ]);
+      const shouldResetResume = shouldResetResumeForSource(resolved.source);
+      const updates: Partial<Pick<ChannelBinding, 'workingDirectory' | 'sdkSessionId'>> = {};
+
+      if (resolved.invalidCandidates.length > 0) {
+        console.warn('[channel-router] Healed invalid bridge working directory', {
+          channelType: existing.channelType,
+          chatId: existing.chatId,
+          sessionId: existing.codepilotSessionId,
+          selected: resolved.path,
+          source: resolved.source,
+          invalidCandidates: resolved.invalidCandidates,
+        });
+      }
+
+      if (existing.workingDirectory !== resolved.path) {
+        updates.workingDirectory = resolved.path;
+        existing.workingDirectory = resolved.path;
+      }
+
+      if (shouldResetResume && existing.sdkSessionId) {
+        updates.sdkSessionId = '';
+        existing.sdkSessionId = '';
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updateChannelBinding(existing.id, updates);
+      }
+
+      if (session.working_directory !== resolved.path || session.sdk_cwd !== resolved.path) {
+        updateSessionWorkingDirectory(session.id, resolved.path);
+      }
+
+      if (shouldResetResume && session.sdk_session_id) {
+        updateSdkSessionId(session.id, '');
+      }
+
+      return existing;
+    }
     // Session was deleted — recreate
     return createBinding(address);
   }
@@ -40,10 +91,11 @@ export function createBinding(
   address: ChannelAddress,
   workingDirectory?: string,
 ): ChannelBinding {
-  const defaultCwd = workingDirectory
-    || getSetting('bridge_default_work_dir')
-    || process.env.HOME
-    || '';
+  const resolved = resolveWorkingDirectory([
+    { path: workingDirectory, source: 'requested' },
+    { path: getSetting('bridge_default_work_dir'), source: 'setting' },
+  ]);
+  const defaultCwd = resolved.path;
   const defaultModel = getSetting('bridge_default_model') || '';
   const defaultProviderId = getSetting('bridge_default_provider_id') || '';
 
@@ -81,12 +133,22 @@ export function bindToSession(
   const session = getSession(codepilotSessionId);
   if (!session) return null;
 
+  const resolved = resolveWorkingDirectory([
+    { path: session.sdk_cwd, source: 'session_sdk_cwd' },
+    { path: session.working_directory, source: 'session_working_directory' },
+    { path: getSetting('bridge_default_work_dir'), source: 'setting' },
+  ]);
+
+  if (session.working_directory !== resolved.path || session.sdk_cwd !== resolved.path) {
+    updateSessionWorkingDirectory(session.id, resolved.path);
+  }
+
   return upsertChannelBinding({
     channelType: address.channelType,
     chatId: address.chatId,
     codepilotSessionId,
     sdkSessionId: '',
-    workingDirectory: session.working_directory,
+    workingDirectory: resolved.path,
     model: session.model,
     mode: 'code',
   });

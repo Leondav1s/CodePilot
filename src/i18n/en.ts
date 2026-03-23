@@ -45,8 +45,8 @@ const en = {
   'messageInput.reviewDesc': 'Review code quality',
   'messageInput.terminalSetupDesc': 'Configure terminal settings',
   'messageInput.memoryDesc': 'Edit project memory file',
-  'messageInput.modeCode': 'Code',
-  'messageInput.modePlan': 'Plan',
+  // 'messageInput.modeCode': 'Code', // Reserved: mode UI removed in latency remediation
+  // 'messageInput.modePlan': 'Plan', // Reserved: mode UI removed in latency remediation
   'messageInput.aiSuggested': 'AI Suggested',
 
   // ── Streaming message ───────────────────────────────────────
@@ -685,6 +685,15 @@ const en = {
   'bridge.qqChannelDesc': 'Receive and respond to messages via QQ Bot (private chat)',
   'bridge.qqSettings': 'QQ Settings',
   'bridge.qqSettingsDesc': 'Configure QQ Bot credentials for bridge',
+  'bridge.weixinChannel': 'WeChat',
+  'bridge.weixinChannelDesc': 'Receive and respond to messages via WeChat (QR login)',
+  'bridge.weixinSettings': 'WeChat Settings',
+  'bridge.weixinSettingsDesc': 'Configure WeChat accounts for bridge',
+  'bridge.errorNotEnabled': 'Bridge is not enabled. Turn on the toggle first.',
+  'bridge.errorNoChannels': 'No channels enabled. Enable at least one channel (Telegram, Feishu, Discord, QQ, or WeChat).',
+  'bridge.errorNoAdapters': 'No adapters started. Check channel configuration.',
+  'bridge.errorAdapterConfig': 'Channel configuration is invalid. Check settings for each enabled channel.',
+  'bridge.errorNetwork': 'Network error while starting bridge.',
 
   // ── Settings: Discord Bridge ─────────────────────────────────
   'discord.credentials': 'Bot Credentials',
@@ -751,6 +760,45 @@ const en = {
   'qq.step3': 'Click "Test Connection" to verify the credentials are valid',
   'qq.step4': 'Go back to the Bridge page, enable the QQ channel toggle, and start the bridge',
   'qq.step5': 'Add your QQ bot as a friend and send it a message to start chatting',
+
+  // ── Settings: WeChat Bridge ──────────────────────────────────
+  'weixin.accounts': 'Accounts',
+  'weixin.accountsDesc': 'Manage your linked WeChat accounts',
+  'weixin.addAccount': 'Add Account',
+  'weixin.noAccounts': 'No WeChat accounts linked yet',
+  'weixin.accountLabel': 'Label',
+  'weixin.accountStatus': 'Status',
+  'weixin.accountActive': 'Active',
+  'weixin.accountPaused': 'Paused',
+  'weixin.accountExpired': 'Session Expired',
+  'weixin.accountUpdateFailed': 'Failed to update WeChat account',
+  'weixin.accountUpdateSavedRestartFailed': 'Account updated, but bridge restart failed',
+  'weixin.accountDeleteFailed': 'Failed to remove WeChat account',
+  'weixin.accountDeleteSavedRestartFailed': 'Account removed, but bridge restart failed',
+  'weixin.deleteAccount': 'Remove Account',
+  'weixin.deleteConfirm': 'Are you sure you want to remove this WeChat account?',
+  'weixin.allowedUsers': 'Allowed Users',
+  'weixin.allowedUsersDesc': 'Comma-separated user IDs allowed to use this account',
+  'weixin.allowedUsersHint': 'Leave empty to allow all users',
+  'weixin.qrLogin': 'QR Code Login',
+  'weixin.qrLoginDesc': 'Scan the QR code with your WeChat to link an account',
+  'weixin.qrWaiting': 'Waiting for scan...',
+  'weixin.qrScanned': 'Scanned! Confirm on your phone...',
+  'weixin.qrConfirmed': 'Login successful!',
+  'weixin.qrConfirmedRestartFailed': 'Account linked, but bridge restart failed',
+  'weixin.qrExpired': 'QR code expired, refreshing...',
+  'weixin.qrFailed': 'Login failed',
+  'weixin.riskWarning': 'This feature uses the WeChat OpenClaw plugin protocol to connect to a non-OpenClaw product. This may violate WeChat\'s terms of service and could carry account risk. Use at your own discretion.',
+  'weixin.setupGuide': 'Setup Guide',
+  'weixin.step1': 'Click "Add Account" to generate a QR code',
+  'weixin.step2': 'Open WeChat on your phone and scan the QR code',
+  'weixin.step3': 'Confirm the login on your phone',
+  'weixin.step4': 'Go back to the Bridge page, enable the WeChat channel toggle, and start the bridge',
+  'weixin.step5': 'Send a message to the linked WeChat account to start chatting',
+  'weixin.baseUrl': 'API Base URL',
+  'weixin.cdnBaseUrl': 'CDN Base URL',
+  'weixin.mediaEnabled': 'Media Support',
+  'weixin.mediaEnabledDesc': 'Download and process media attachments from WeChat messages',
 
   // ── Assistant Workspace ──────────────────────────────
   'settings.assistant': 'Assistant',
@@ -917,6 +965,9 @@ const en = {
   'mcp.noRuntimeStatus': 'No runtime status available',
   'mcp.reconnect': 'Reconnect',
   'mcp.enable': 'Enable',
+  'mcp.enabled': 'Enabled',
+  'mcp.disabled': 'Disabled',
+  'mcp.managerDesc': 'Toggle controls CodePilot MCP injection. Servers in your Claude Code config may still be loaded by the SDK via its own settings sources.',
 
   // ── SDK Capabilities: Thinking ────────────────────────────
   'settings.thinkingMode': 'Thinking Mode',
@@ -924,6 +975,9 @@ const en = {
   'settings.thinkingAdaptive': 'Adaptive',
   'settings.thinkingEnabled': 'Enabled',
   'settings.thinkingDisabled': 'Disabled',
+  'settings.defaultModel': 'Default Model',
+  'settings.defaultModelDesc': 'Only affects new conversations. Existing conversations keep their selected model.',
+  'settings.defaultModelAuto': 'Auto (first in list)',
 
   // ── SDK Capabilities: Account ─────────────────────────────
   'settings.accountInfo': 'Account Information',

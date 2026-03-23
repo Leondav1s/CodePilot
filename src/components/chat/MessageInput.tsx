@@ -81,10 +81,15 @@ export function MessageInput({
 
   // --- Extracted hooks ---
   const popover = usePopoverState(modelName);
-  const { providerGroups, currentProviderIdValue, modelOptions, currentModelOption } = useProviderModels(providerId, modelName);
+  const { providerGroups, currentProviderIdValue, modelOptions, currentModelOption, globalDefaultModel, globalDefaultProvider } = useProviderModels(providerId, modelName);
 
   // Auto-correct model when it doesn't exist in the current provider's model list.
   // This prevents sending an unsupported model name (e.g. 'opus' to MiniMax which only has 'sonnet').
+  // IMPORTANT: Only fall back to first model — never use globalDefaultModel here.
+  // Global default model is only for NEW conversations (chat/page.tsx).
+  // Existing sessions must keep their own selected model; if that model becomes
+  // invalid (provider changed), fall back to the provider's first model, not the
+  // global default, to avoid overwriting the session's model choice.
   useEffect(() => {
     if (modelName && modelOptions.length > 0 && !modelOptions.some(m => m.value === modelName)) {
       const fallback = modelOptions[0].value;
@@ -425,6 +430,8 @@ export function MessageInput({
                   modelOptions={modelOptions}
                   onModelChange={onModelChange}
                   onProviderModelChange={onProviderModelChange}
+                  globalDefaultModel={globalDefaultModel}
+                  globalDefaultProvider={globalDefaultProvider}
                 />
 
                 {/* Effort selector — only visible when model supports effort */}

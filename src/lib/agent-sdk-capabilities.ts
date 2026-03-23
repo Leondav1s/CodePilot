@@ -62,6 +62,18 @@ function getOrCreateCache(providerId: string): ProviderCapabilityCache {
 }
 
 // ==========================================
+// Cache freshness
+// ==========================================
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Check if the capability cache for a provider is still fresh (within TTL). */
+export function isCacheFresh(providerId: string = 'env'): boolean {
+  const cache = getCacheMap().get(providerId);
+  return !!cache && cache.capturedAt > 0 && (Date.now() - cache.capturedAt) < CACHE_TTL_MS;
+}
+
+// ==========================================
 // Capture
 // ==========================================
 

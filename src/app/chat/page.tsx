@@ -44,24 +44,26 @@ export default function NewChatPage() {
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [hasProvider, setHasProvider] = useState(true); // assume true until checked
   const [mode] = useState('code');
+  // Model/provider start empty — populated by the async global-default fetch.
+  // This prevents the race where a user sends before the fetch completes and
+  // gets the stale localStorage model instead of the configured default.
+  const [modelReady, setModelReady] = useState(false);
   const [currentModel, setCurrentModel] = useState(() => {
-    if (typeof window === 'undefined') return 'sonnet';
+    if (typeof window === 'undefined') return '';
     // One-time migration: clear stale model/provider from pre-0.38 installs
     if (!localStorage.getItem('codepilot:migration-038')) {
       localStorage.removeItem('codepilot:last-model');
       localStorage.removeItem('codepilot:last-provider-id');
       localStorage.setItem('codepilot:migration-038', '1');
-      return 'sonnet';
     }
-    return localStorage.getItem('codepilot:last-model') || 'sonnet';
+    return '';
   });
   const [currentProviderId, setCurrentProviderId] = useState(() => {
     if (typeof window === 'undefined') return '';
-    // Migration already ran above (or was already done), just read
     if (!localStorage.getItem('codepilot:migration-038')) {
       return '';
     }
-    return localStorage.getItem('codepilot:last-provider-id') || '';
+    return '';
   });
   const [pendingPermission, setPendingPermission] = useState<PermissionRequestEvent | null>(null);
   const [permissionResolved, setPermissionResolved] = useState<'allow' | 'deny' | null>(null);
@@ -91,34 +93,87 @@ export default function NewChatPage() {
     return () => controller.abort();
   }, [currentProviderId]);
 
-  // Validate restored model/provider against actual available providers/models
+  // Validate restored model/provider against actual available providers/models.
+  // For NEW conversations, the global default model takes priority
+  // over localStorage's last-model (which is a cross-session global memory).
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/providers/models')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.groups || data.groups.length === 0) return;
-        const groups = data.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
 
-        // Validate provider
-        const validProvider = groups.find(g => g.provider_id === currentProviderId);
-        if (currentProviderId && !validProvider) {
-          setCurrentProviderId('');
-          localStorage.removeItem('codepilot:last-provider-id');
-        }
+    // Fetch models and global default in parallel
+    const modelsP = fetch('/api/providers/models').then(r => r.ok ? r.json() : null);
+    const globalP = fetch('/api/providers/options?providerId=__global__').then(r => r.ok ? r.json() : null);
 
-        // Validate model against the resolved provider's model list
-        const resolvedGroup = validProvider || groups[0];
-        if (resolvedGroup?.models && resolvedGroup.models.length > 0) {
-          const validModel = resolvedGroup.models.find(m => m.value === currentModel);
-          if (!validModel) {
-            const fallback = resolvedGroup.models[0].value;
-            setCurrentModel(fallback);
-            localStorage.setItem('codepilot:last-model', fallback);
-          }
+    Promise.all([modelsP, globalP]).then(([modelsData, globalData]) => {
+      if (cancelled || !modelsData?.groups || modelsData.groups.length === 0) {
+        // No provider data — fall back to localStorage best-effort
+        const savedModel = localStorage.getItem('codepilot:last-model') || 'sonnet';
+        const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
+        setCurrentModel(savedModel);
+        setCurrentProviderId(savedProvider);
+        setModelReady(true);
+        return;
+      }
+      const groups = modelsData.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
+      const globalDefaultModel = globalData?.options?.default_model || '';
+      const globalDefaultProvider = globalData?.options?.default_model_provider || '';
+
+      // Apply global default for new conversations
+      // Case 1: both provider and model are set and valid
+      if (globalDefaultModel && globalDefaultProvider) {
+        const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
+        const modelValid = targetGroup?.models.some(m => m.value === globalDefaultModel);
+        if (modelValid) {
+          setCurrentModel(globalDefaultModel);
+          setCurrentProviderId(globalDefaultProvider);
+          setModelReady(true);
+          return;
         }
-      })
-      .catch(() => {});
+      }
+      // Case 2: provider is set but model was cleared (e.g. after doctor repair / provider delete)
+      // → use that provider's first available model
+      if (globalDefaultProvider && !globalDefaultModel) {
+        const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
+        if (targetGroup?.models?.length) {
+          setCurrentModel(targetGroup.models[0].value);
+          setCurrentProviderId(globalDefaultProvider);
+          setModelReady(true);
+          return;
+        }
+      }
+
+      // No global default — use localStorage, validate against provider's list
+      const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
+      const savedModel = localStorage.getItem('codepilot:last-model') || '';
+      const validProvider = groups.find(g => g.provider_id === savedProvider);
+      const resolvedGroup = validProvider || groups[0];
+      const resolvedPid = resolvedGroup?.provider_id || '';
+
+      if (validProvider) {
+        setCurrentProviderId(savedProvider);
+      } else {
+        setCurrentProviderId(resolvedPid);
+      }
+
+      if (resolvedGroup?.models && resolvedGroup.models.length > 0) {
+        const validModel = savedModel && resolvedGroup.models.some(m => m.value === savedModel);
+        if (validModel) {
+          setCurrentModel(savedModel);
+        } else {
+          setCurrentModel(resolvedGroup.models[0].value);
+        }
+      } else {
+        setCurrentModel(savedModel || 'sonnet');
+      }
+      setModelReady(true);
+    }).catch(() => {
+      // Fetch failed — fall back to localStorage best-effort
+      const savedModel = localStorage.getItem('codepilot:last-model') || 'sonnet';
+      const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
+      setCurrentModel(savedModel);
+      setCurrentProviderId(savedProvider);
+      setModelReady(true);
+    });
+
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount to validate initial values
@@ -188,6 +243,8 @@ export default function NewChatPage() {
   // Check provider availability — only 'completed' counts, 'skipped' means user deferred but has no real credentials
   useEffect(() => {
     const checkProvider = () => {
+      // Lock sending while we re-resolve the model/provider
+      setModelReady(false);
       fetch('/api/setup')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
@@ -196,47 +253,84 @@ export default function NewChatPage() {
           }
         })
         .catch(() => {});
-      // Sync provider/model from localStorage, validating against available providers
+      // Sync provider/model, applying global default model for new conversations.
       const savedProviderId = localStorage.getItem('codepilot:last-provider-id');
-      const savedModel = localStorage.getItem('codepilot:last-model');
-      fetch('/api/providers/models')
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data?.groups || data.groups.length === 0) return;
-          const groups = data.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
 
-          // Validate and apply provider
-          if (savedProviderId !== null) {
-            const validProvider = groups.find(g => g.provider_id === savedProviderId);
-            if (validProvider) {
-              setCurrentProviderId(savedProviderId);
-            } else {
-              setCurrentProviderId('');
-              localStorage.removeItem('codepilot:last-provider-id');
-            }
-          }
+      // Fetch models + global default in parallel
+      const modelsP = fetch('/api/providers/models').then(r => r.ok ? r.json() : null);
+      const globalP = fetch('/api/providers/options?providerId=__global__').then(r => r.ok ? r.json() : null);
 
-          // Validate and apply model
-          const resolvedPid = savedProviderId && groups.find(g => g.provider_id === savedProviderId)
-            ? savedProviderId
-            : groups[0]?.provider_id || '';
-          const resolvedGroup = groups.find(g => g.provider_id === resolvedPid) || groups[0];
-          if (savedModel && resolvedGroup?.models?.length > 0) {
-            const validModel = resolvedGroup.models.find((m: { value: string }) => m.value === savedModel);
-            if (validModel) {
-              setCurrentModel(savedModel);
-            } else {
-              const fallback = resolvedGroup.models[0].value;
-              setCurrentModel(fallback);
-              localStorage.setItem('codepilot:last-model', fallback);
-            }
+      Promise.all([modelsP, globalP]).then(([modelsData, globalData]) => {
+        if (!modelsData?.groups || modelsData.groups.length === 0) {
+          setModelReady(true);
+          return;
+        }
+        const groups = modelsData.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
+        const globalDefaultModel = globalData?.options?.default_model || '';
+        const globalDefaultProvider = globalData?.options?.default_model_provider || '';
+
+        // Validate and apply provider
+        if (savedProviderId !== null) {
+          const validProvider = groups.find(g => g.provider_id === savedProviderId);
+          if (validProvider) {
+            setCurrentProviderId(savedProviderId);
+          } else {
+            setCurrentProviderId('');
+            localStorage.removeItem('codepilot:last-provider-id');
           }
-        })
-        .catch(() => {
-          // On fetch failure, still apply localStorage values as-is (best effort)
-          if (savedProviderId !== null) setCurrentProviderId(savedProviderId);
-          if (savedModel) setCurrentModel(savedModel);
-        });
+        }
+
+        // Apply global default for new conversations
+        // Case 1: both provider and model are set and valid
+        if (globalDefaultModel && globalDefaultProvider) {
+          const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
+          const modelValid = targetGroup?.models.some(m => m.value === globalDefaultModel);
+          if (modelValid) {
+            setCurrentModel(globalDefaultModel);
+            setCurrentProviderId(globalDefaultProvider);
+            setModelReady(true);
+            return;
+          }
+        }
+        // Case 2: provider is set but model was cleared (e.g. after doctor repair / provider delete)
+        // → use that provider's first available model
+        if (globalDefaultProvider && !globalDefaultModel) {
+          const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
+          if (targetGroup?.models?.length) {
+            setCurrentModel(targetGroup.models[0].value);
+            setCurrentProviderId(globalDefaultProvider);
+            setModelReady(true);
+            return;
+          }
+        }
+
+        // No global default — validate current model
+        const resolvedPid = savedProviderId && groups.find(g => g.provider_id === savedProviderId)
+          ? savedProviderId
+          : groups[0]?.provider_id || '';
+        const resolvedGroup = groups.find(g => g.provider_id === resolvedPid) || groups[0];
+        setCurrentProviderId(resolvedPid);
+        if (resolvedGroup?.models?.length > 0) {
+          const savedModel = localStorage.getItem('codepilot:last-model');
+          const validModel = savedModel && resolvedGroup.models.some(
+            (m: { value: string }) => m.value === savedModel
+          );
+          if (validModel) {
+            setCurrentModel(savedModel);
+          } else {
+            const fallback = resolvedGroup.models[0].value;
+            setCurrentModel(fallback);
+            localStorage.setItem('codepilot:last-model', fallback);
+          }
+        }
+        setModelReady(true);
+      }).catch(() => {
+        // On fetch failure, still apply localStorage values as-is (best effort)
+        if (savedProviderId !== null) setCurrentProviderId(savedProviderId);
+        const savedModel = localStorage.getItem('codepilot:last-model');
+        if (savedModel) setCurrentModel(savedModel);
+        setModelReady(true);
+      });
     };
     checkProvider();
 
@@ -310,6 +404,9 @@ export default function NewChatPage() {
   const sendFirstMessage = useCallback(
     async (content: string, _files?: unknown, systemPromptAppend?: string, displayOverride?: string) => {
       if (isStreaming) return;
+
+      // Wait for model/provider to be resolved from the global default before allowing send
+      if (!modelReady) return;
 
       // Require a project directory before sending
       if (!workingDir.trim()) {
@@ -580,7 +677,7 @@ export default function NewChatPage() {
         abortControllerRef.current = null;
       }
     },
-    [isStreaming, router, workingDir, mode, currentModel, currentProviderId, permissionProfile, selectedEffort, thinkingMode, context1m, setPendingApprovalSessionId, t, hasProvider]
+    [isStreaming, router, workingDir, mode, currentModel, currentProviderId, permissionProfile, selectedEffort, thinkingMode, context1m, setPendingApprovalSessionId, t, hasProvider, modelReady]
   );
 
   const handleCommand = useCallback((command: string) => {
@@ -660,7 +757,7 @@ export default function NewChatPage() {
         onSend={sendFirstMessage}
         onCommand={handleCommand}
         onStop={stopStreaming}
-        disabled={false}
+        disabled={!modelReady}
         isStreaming={isStreaming}
         modelName={currentModel}
         onModelChange={setCurrentModel}

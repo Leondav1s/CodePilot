@@ -17,12 +17,13 @@ import type { ClaudeStreamOptions, SSEEvent, TokenUsage, MCPServerConfig, Permis
 import { isImageFile } from '@/types';
 import { registerPendingPermission } from './permission-registry';
 import { registerConversation, unregisterConversation } from './conversation-registry';
-import { captureCapabilities, setCachedPlugins } from './agent-sdk-capabilities';
+import { captureCapabilities, isCacheFresh, setCachedPlugins } from './agent-sdk-capabilities';
 import { getSetting, updateSdkSessionId, createPermissionRequest } from './db';
 import { resolveForClaudeCode, toClaudeCodeEnv } from './provider-resolver';
 import { findClaudeBinary, findGitBash, getExpandedPath, invalidateClaudePathCache } from './platform';
 import { notifyPermissionRequest, notifyGeneric } from './telegram-bot';
 import { classifyError, formatClassifiedError } from './error-classifier';
+import { resolveWorkingDirectory } from './working-directory';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -409,6 +410,16 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
       });
 
       try {
+        const resolvedWorkingDirectory = resolveWorkingDirectory([
+          { path: workingDirectory, source: 'requested' },
+        ]);
+
+        if (workingDirectory && resolvedWorkingDirectory.source !== 'requested') {
+          console.warn(
+            `[claude-client] Working directory "${workingDirectory}" is unavailable, falling back to "${resolvedWorkingDirectory.path}"`,
+          );
+        }
+
         // Build env for the Claude Code subprocess.
         // Start with process.env (includes user shell env from Electron's loadUserShellEnv).
         // Then overlay any API config the user set in CodePilot settings (optional).
@@ -451,7 +462,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         const skipPermissions = globalSkip || !!sessionBypassPermissions;
 
         const queryOptions: Options = {
-          cwd: workingDirectory || os.homedir(),
+          cwd: resolvedWorkingDirectory.path,
           abortController,
           includePartialMessages: true,
           permissionMode: skipPermissions
@@ -519,12 +530,12 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         if (generativeUI !== false) {
           const needsWidgetSpecs = (() => {
             const widgetKeywords = /可视化|图表|流程图|时间线|架构图|对比|visualiz|diagram|chart|flowchart|timeline|infographic|interactive|widget|show-widget|hierarchy|dashboard/i;
-            // Check current prompt
+            // Check current user prompt
             if (widgetKeywords.test(prompt)) return true;
             // Check if conversation already has widgets (resume context)
             if (conversationHistory?.some(m => m.content.includes('show-widget'))) return true;
-            // Check system prompt for image/widget agent mode
-            if (systemPrompt && widgetKeywords.test(systemPrompt)) return true;
+            // Check explicit widget/image-agent mode
+            if (imageAgentMode) return true;
             return false;
           })();
 
@@ -542,9 +553,10 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         if (thinking) {
           queryOptions.thinking = thinking;
         }
-        if (effort) {
-          queryOptions.effort = effort;
-        }
+        // Always set effort explicitly to prevent user-level ~/.claude/settings.json
+        // from injecting 'high' effort via settingSources inheritance.
+        // UI-selected effort takes priority; otherwise default to 'medium'.
+        queryOptions.effort = effort || 'medium';
         if (outputFormat) {
           queryOptions.outputFormat = outputFormat;
         }
@@ -574,8 +586,10 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         // Resume depends on session context (cwd/project scope), so if the
         // original working_directory no longer exists, resume will fail.
         let shouldResume = !!sdkSessionId;
-        if (shouldResume && workingDirectory && !fs.existsSync(workingDirectory)) {
-          console.warn(`[claude-client] Working directory "${workingDirectory}" does not exist, skipping resume`);
+        if (shouldResume && workingDirectory && resolvedWorkingDirectory.source !== 'requested') {
+          console.warn(
+            `[claude-client] Working directory "${workingDirectory}" does not exist, skipping resume`,
+          );
           shouldResume = false;
           if (sessionId) {
             try { updateSdkSessionId(sessionId, ''); } catch { /* best effort */ }
@@ -591,6 +605,15 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
           }));
         }
         if (shouldResume) {
+          // Emit visible status so the user sees feedback during resume initialization
+          controller.enqueue(formatSSE({
+            type: 'status',
+            data: JSON.stringify({
+              notification: true,
+              title: 'Resuming session',
+              message: 'Reconnecting to previous conversation...',
+            }),
+          }));
           queryOptions.resume = sdkSessionId;
         }
 
@@ -651,7 +674,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         const telegramOpts = {
           sessionId,
           sessionTitle: undefined as string | undefined,
-          workingDirectory,
+          workingDirectory: resolvedWorkingDirectory.path,
         };
 
         // No queryOptions.hooks — all hook types (Notification, PostToolUse) use
@@ -699,7 +722,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
 
           let textPrompt = basePrompt;
           if (nonImageFiles.length > 0) {
-            const workDir = workingDirectory || os.homedir();
+            const workDir = resolvedWorkingDirectory.path;
             const savedPaths = getUploadedFilePaths(nonImageFiles, workDir);
             const fileReferences = savedPaths
               .map((p, i) => `[User attached file: ${p} (${nonImageFiles[i].name})]`)
@@ -716,7 +739,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
             const textWithImageRefs = imageAgentMode
               ? textPrompt
               : (() => {
-                  const workDir = workingDirectory || os.homedir();
+                  const workDir = resolvedWorkingDirectory.path;
                   const imagePaths = getUploadedFilePaths(imageFiles, workDir);
                   const imageReferences = imagePaths
                     .map((p, i) => `[User attached image: ${p} (${imageFiles[i].name})]`)
@@ -814,12 +837,10 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
 
         registerConversation(sessionId, conversation);
 
-        // Fire-and-forget: capture SDK capabilities for UI consumption
-        // Scope to provider so different providers don't pollute each other's cache
+        // Defer capability capture until first assistant response to avoid
+        // competing with first-token latency. Skip entirely if cache is fresh.
         const capProviderId = resolved.provider?.api_key ? resolved.provider.id || 'custom' : 'env';
-        captureCapabilities(sessionId, conversation, capProviderId).catch((err) => {
-          console.warn('[claude-client] Capability capture failed:', err);
-        });
+        let capturePending = !isCacheFresh(capProviderId);
 
         let tokenUsage: TokenUsage | null = null;
         // Track pending TodoWrite tool_use_ids so we can sync after successful execution
@@ -831,6 +852,13 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
 
           switch (message.type) {
             case 'assistant': {
+              // Deferred capability capture: trigger after first assistant message
+              if (capturePending) {
+                capturePending = false;
+                captureCapabilities(sessionId, conversation, capProviderId).catch((err) => {
+                  console.warn('[claude-client] Deferred capability capture failed:', err);
+                });
+              }
               const assistantMsg = message as SDKAssistantMessage;
               // Text deltas are handled by stream_event for real-time streaming.
               // Here we only process tool_use blocks.

@@ -398,6 +398,27 @@ async function deliverResponse(
     }
     return { ok: true };
   }
+  if (adapter.channelType === 'weixin') {
+    // WeChat plain text only, 4096 chars per chunk, max 5 chunks.
+    const WEIXIN_MAX_CHUNKS = 5;
+    const limit = limits.weixin || 4096;
+    const chunks = chunkText(responseText, limit);
+
+    const effectiveChunks = chunks.length > WEIXIN_MAX_CHUNKS
+      ? [...chunks.slice(0, WEIXIN_MAX_CHUNKS - 1), chunks.slice(WEIXIN_MAX_CHUNKS - 1).join('\n').slice(0, limit - 30) + '\n\n[... response truncated]']
+      : chunks;
+
+    for (let i = 0; i < effectiveChunks.length; i++) {
+      const result = await deliver(adapter, {
+        address,
+        text: effectiveChunks[i],
+        parseMode: 'plain',
+        replyToMessageId,
+      }, { sessionId });
+      if (!result.ok) return result;
+    }
+    return { ok: true };
+  }
 
   // Generic fallback: deliver as plain text
   return deliver(adapter, {
@@ -464,24 +485,33 @@ function processWithSessionLock(sessionId: string, fn: () => Promise<void>): Pro
   return current;
 }
 
+export interface StartResult {
+  started: boolean;
+  reason?: string;
+}
+
 /**
  * Start the bridge system.
  * Checks feature flags, registers enabled adapters, starts polling loops.
+ * Returns a result indicating success/failure with a reason.
  */
-export async function start(): Promise<void> {
+export async function start(): Promise<StartResult> {
   const state = getState();
-  if (state.running) return;
+  if (state.running) return { started: true };
 
   const bridgeEnabled = getSetting('remote_bridge_enabled') === 'true';
   if (!bridgeEnabled) {
     console.log('[bridge-manager] Bridge not enabled (remote_bridge_enabled != true)');
-    return;
+    return { started: false, reason: 'bridge_not_enabled' };
   }
 
   // Iterate all registered adapter types and create those that are enabled
+  const configErrors: string[] = [];
+  let enabledCount = 0;
   for (const channelType of getRegisteredTypes()) {
     const settingKey = `bridge_${channelType}_enabled`;
     if (getSetting(settingKey) !== 'true') continue;
+    enabledCount++;
 
     const adapter = createAdapter(channelType);
     if (!adapter) continue;
@@ -491,7 +521,12 @@ export async function start(): Promise<void> {
       registerAdapter(adapter);
     } else {
       console.warn(`[bridge-manager] ${channelType} adapter not valid:`, configError);
+      configErrors.push(`${channelType}: ${configError}`);
     }
+  }
+
+  if (enabledCount === 0) {
+    return { started: false, reason: 'no_channels_enabled' };
   }
 
   // Start all registered adapters, track how many succeeded
@@ -511,7 +546,10 @@ export async function start(): Promise<void> {
     console.warn('[bridge-manager] No adapters started successfully, bridge not activated');
     state.adapters.clear();
     state.adapterMeta.clear();
-    return;
+    const reason = configErrors.length > 0
+      ? `adapter_config_invalid: ${configErrors.join('; ')}`
+      : 'no_adapters_started';
+    return { started: false, reason };
   }
 
   // Mark running BEFORE starting consumer loops — runAdapterLoop checks
@@ -530,6 +568,7 @@ export async function start(): Promise<void> {
   }
 
   console.log(`[bridge-manager] Bridge started with ${startedCount} adapter(s)`);
+  return { started: true };
 }
 
 /**
@@ -567,6 +606,18 @@ export async function stop(): Promise<void> {
   setBridgeModeActive(false);
 
   console.log('[bridge-manager] Bridge stopped');
+}
+
+/**
+ * Restart the bridge (stop + start). Useful when adapter config changes
+ * at runtime, e.g. a new WeChat account is linked while the bridge is running.
+ */
+export async function restart(): Promise<StartResult> {
+  const state = getState();
+  if (state.running) {
+    await stop();
+  }
+  return start();
 }
 
 /**

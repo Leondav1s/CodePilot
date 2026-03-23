@@ -31,6 +31,10 @@ interface ModelSelectorDropdownProps {
   modelOptions: ModelOption[];
   onModelChange?: (model: string) => void;
   onProviderModelChange?: (providerId: string, model: string) => void;
+  /** Global default model value */
+  globalDefaultModel?: string;
+  /** Global default model's provider ID */
+  globalDefaultProvider?: string;
 }
 
 export function ModelSelectorDropdown({
@@ -40,13 +44,24 @@ export function ModelSelectorDropdown({
   modelOptions,
   onModelChange,
   onProviderModelChange,
+  globalDefaultModel,
+  globalDefaultProvider,
 }: ModelSelectorDropdownProps) {
   const { t } = useTranslation();
+  const isZh = t('nav.chats') === '对话';
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
 
   const currentModelOption = modelOptions.find((m) => m.value === currentModelValue) || modelOptions[0];
+
+  // Is the currently displayed model the global default?
+  const isCurrentDefault = !!(
+    globalDefaultModel &&
+    globalDefaultProvider &&
+    currentModelValue === globalDefaultModel &&
+    currentProviderIdValue === globalDefaultProvider
+  );
 
   // Click outside to close model menu
   useEffect(() => {
@@ -84,6 +99,11 @@ export function ModelSelectorDropdown({
         onClick={() => setModelMenuOpen((prev) => !prev)}
       >
         <span className="text-xs font-mono">{currentModelOption?.label}</span>
+        {isCurrentDefault && (
+          <span className="text-[9px] px-1 py-0 rounded bg-primary/10 text-primary font-medium ml-0.5">
+            {isZh ? '默认' : 'Default'}
+          </span>
+        )}
         <CaretDown size={10} className={cn("transition-transform duration-200", modelMenuOpen && "rotate-180")} />
       </PromptInputButton>
 
@@ -111,6 +131,12 @@ export function ModelSelectorDropdown({
                 <div className="py-0.5">
                   {group.models.map((opt) => {
                     const isActive = opt.value === currentModelValue && group.provider_id === currentProviderIdValue;
+                    const isDefault = !!(
+                      globalDefaultModel &&
+                      globalDefaultProvider &&
+                      opt.value === globalDefaultModel &&
+                      group.provider_id === globalDefaultProvider
+                    );
                     return (
                       <CommandListItem
                         key={`${group.provider_id}-${opt.value}`}
@@ -118,7 +144,14 @@ export function ModelSelectorDropdown({
                         onClick={() => handleModelSelect(group.provider_id, opt.value)}
                         className="justify-between"
                       >
-                        <span className="font-mono text-xs">{opt.label}</span>
+                        <span className="font-mono text-xs flex items-center gap-1.5">
+                          {opt.label}
+                          {isDefault && (
+                            <span className="text-[9px] px-1 py-0 rounded bg-primary/10 text-primary font-medium">
+                              {isZh ? '默认' : 'Default'}
+                            </span>
+                          )}
+                        </span>
                         {isActive && <span className="text-xs">&#10003;</span>}
                       </CommandListItem>
                     );

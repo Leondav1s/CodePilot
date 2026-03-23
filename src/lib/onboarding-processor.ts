@@ -171,6 +171,6 @@ Keep it under 2000 characters. Use markdown headers and bullet points.\n\n${qaTe
   const state = loadState(workspacePath);
   state.onboardingComplete = true;
   state.lastCheckInDate = today;
-  state.schemaVersion = 3;
+  state.schemaVersion = 4;
   saveState(workspacePath, state);
 }

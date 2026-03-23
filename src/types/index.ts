@@ -249,10 +249,14 @@ export interface UpdateProviderRequest {
   sort_order?: number;
 }
 
-/** Per-provider options stored in options_json */
+/** Provider options stored in options_json (per-provider) or settings (global) */
 export interface ProviderOptions {
   thinking_mode?: 'adaptive' | 'enabled' | 'disabled';
   context_1m?: boolean;
+  /** Global default model ID — used for new sessions */
+  default_model?: string;
+  /** Global default model's provider ID — which provider the default model belongs to */
+  default_model_provider?: string;
 }
 
 export interface ProvidersResponse {
@@ -536,6 +540,8 @@ export interface MCPServerConfig {
   type?: 'stdio' | 'sse' | 'http';
   url?: string;
   headers?: Record<string, string>;
+  /** Persistent enable/disable. undefined or true = enabled; false = disabled. */
+  enabled?: boolean;
 }
 
 export interface MCPConfig {
@@ -1079,4 +1085,28 @@ export interface GitWorktree {
   branch: string;
   bare: boolean;
   dirty: boolean;
+}
+
+// ==========================================
+// WeChat Bridge Types
+// ==========================================
+
+export interface WeixinAccount {
+  accountId: string;
+  userId: string;
+  baseUrl: string;
+  cdnBaseUrl: string;
+  token: string;
+  name: string;
+  enabled: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WeixinContextTokenRecord {
+  accountId: string;
+  peerUserId: string;
+  contextToken: string;
+  updatedAt: string;
 }

@@ -21,6 +21,8 @@ import {
   createProvider,
   deleteProvider,
   getDb,
+  getSetting,
+  setSetting,
 } from '../../lib/db';
 import { resolveProvider } from '../../lib/provider-resolver';
 
@@ -57,17 +59,22 @@ function cleanupTestProviders() {
 // ── Tests ───────────────────────────────────────────────────────
 
 describe('Stale default_provider_id cleanup', () => {
-  // Save and restore original default
+  // Save and restore original default + global default model provider
   let originalDefault: string | undefined;
+  let originalGlobalProvider: string | undefined;
 
   beforeEach(() => {
     originalDefault = getDefaultProviderId();
+    originalGlobalProvider = getSetting('global_default_model_provider') || undefined;
+    // Clear global_default_model_provider so these tests exercise the legacy path
+    setSetting('global_default_model_provider', '');
     cleanupTestProviders();
   });
 
   afterEach(() => {
     cleanupTestProviders();
-    // Restore original default
+    // Restore originals
+    setSetting('global_default_model_provider', originalGlobalProvider || '');
     if (originalDefault) {
       setDefaultProviderId(originalDefault);
     }

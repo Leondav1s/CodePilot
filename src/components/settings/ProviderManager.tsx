@@ -26,10 +26,20 @@ import {
   findMatchingPreset,
   type QuickPreset,
 } from "./provider-presets";
-import type { ApiProvider } from "@/types";
+import type { ApiProvider, ProviderModelGroup } from "@/types";
 import { useTranslation } from "@/hooks/useTranslation";
+import type { TranslationKey } from "@/i18n";
 import Anthropic from "@lobehub/icons/es/Anthropic";
 import { ProviderOptionsSection } from "./ProviderOptionsSection";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -59,6 +69,11 @@ export function ProviderManager() {
   // Doctor dialog state
   const [doctorOpen, setDoctorOpen] = useState(false);
 
+  // Global default model state
+  const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('');
+  const [globalDefaultProvider, setGlobalDefaultProvider] = useState('');
+
   const fetchProviders = useCallback(async () => {
     try {
       setError(null);
@@ -75,6 +90,33 @@ export function ProviderManager() {
   }, []);
 
   useEffect(() => { fetchProviders(); }, [fetchProviders]);
+
+  // Fetch all provider models for the global default model selector
+  const fetchModels = useCallback(() => {
+    fetch('/api/providers/models')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.groups) setProviderGroups(data.groups);
+      })
+      .catch(() => {});
+    // Load current global default model
+    fetch('/api/providers/options?providerId=__global__')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.options?.default_model) {
+          setGlobalDefaultModel(data.options.default_model);
+          setGlobalDefaultProvider(data.options.default_model_provider || '');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchModels();
+    const handler = () => fetchModels();
+    window.addEventListener('provider-changed', handler);
+    return () => window.removeEventListener('provider-changed', handler);
+  }, [fetchModels]);
 
   const handleEdit = (provider: ApiProvider) => {
     // Try to match provider to a quick preset for a cleaner edit experience
@@ -123,27 +165,6 @@ export function ProviderManager() {
     const result = await res.json();
     const newProvider: ApiProvider = result.provider;
     setProviders((prev) => [...prev, newProvider]);
-
-    // Auto-set as default if this is the first provider
-    // Otherwise ask the user if they want to switch
-    if (newProvider.id) {
-      const isFirst = providers.length === 0;
-      const shouldSwitch = isFirst || window.confirm(
-        isZh
-          ? `已添加「${newProvider.name}」。是否将其设为默认服务商？\n（当前新对话将使用此服务商）`
-          : `Added "${newProvider.name}". Set as default provider?\n(New conversations will use this provider)`
-      );
-      if (shouldSwitch) {
-        try {
-          await fetch('/api/providers/set-default', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider_id: newProvider.id }),
-          });
-          localStorage.setItem('codepilot:last-provider-id', newProvider.id);
-        } catch { /* best effort */ }
-      }
-    }
 
     window.dispatchEvent(new Event("provider-changed"));
   };
@@ -196,6 +217,40 @@ export function ProviderManager() {
 
   const sorted = [...providers].sort((a, b) => a.sort_order - b.sort_order);
 
+  // Save global default model — also syncs default_provider_id for backend consumers
+  const handleGlobalDefaultModelChange = useCallback(async (compositeValue: string) => {
+    if (compositeValue === '__auto__') {
+      setGlobalDefaultModel('');
+      setGlobalDefaultProvider('');
+      // Clear both global default model AND legacy default_provider_id in one call
+      await fetch('/api/providers/options', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: '__global__',
+          options: { default_model: '', default_model_provider: '', legacy_default_provider_id: '' },
+        }),
+      }).catch(() => {});
+    } else {
+      // compositeValue format: "providerId::modelValue"
+      const sepIdx = compositeValue.indexOf('::');
+      const pid = compositeValue.slice(0, sepIdx);
+      const model = compositeValue.slice(sepIdx + 2);
+      setGlobalDefaultModel(model);
+      setGlobalDefaultProvider(pid);
+      // Write global default model + sync legacy default_provider_id in one call
+      await fetch('/api/providers/options', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: '__global__',
+          options: { default_model: model, default_model_provider: pid, legacy_default_provider_id: pid },
+        }),
+      }).catch(() => {});
+    }
+    window.dispatchEvent(new Event('provider-changed'));
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Error */}
@@ -205,7 +260,7 @@ export function ProviderManager() {
         </div>
       )}
 
-      {/* ─── Section 0: Troubleshooting ─── */}
+      {/* ─── Section 0: Troubleshooting + Default Model ─── */}
       <div className="rounded-lg border border-border/50 p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -225,6 +280,49 @@ export function ProviderManager() {
             <Stethoscope size={14} />
             {isZh ? '运行诊断' : 'Run Diagnostics'}
           </Button>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-border/30 my-3" />
+
+        {/* Global default model */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium">{t('settings.defaultModel' as TranslationKey)}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t('settings.defaultModelDesc' as TranslationKey)}
+            </p>
+          </div>
+          {providerGroups.length > 0 && (
+            <Select
+              value={globalDefaultModel ? `${globalDefaultProvider}::${globalDefaultModel}` : '__auto__'}
+              onValueChange={handleGlobalDefaultModelChange}
+            >
+              <SelectTrigger className="w-[160px] h-7 text-[11px] shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">
+                  {t('settings.defaultModelAuto' as TranslationKey)}
+                </SelectItem>
+                {providerGroups.map(group => (
+                  <SelectGroup key={group.provider_id}>
+                    <SelectLabel className="text-[10px] text-muted-foreground">
+                      {group.provider_name}
+                    </SelectLabel>
+                    {group.models.map(m => (
+                      <SelectItem
+                        key={`${group.provider_id}::${m.value}`}
+                        value={`${group.provider_id}::${m.value}`}
+                      >
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
@@ -250,9 +348,6 @@ export function ProviderManager() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">Claude Code</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    {t('provider.default')}
-                  </Badge>
                   {Object.keys(envDetected).length > 0 && (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-status-success-foreground border-status-success-border">
                       ENV
@@ -264,7 +359,7 @@ export function ProviderManager() {
             <p className="text-[11px] text-muted-foreground ml-[34px] leading-relaxed">
               {t('provider.ccSwitchHint')}
             </p>
-            <ProviderOptionsSection providerId="env" />
+            <ProviderOptionsSection providerId="env" showThinkingOptions />
           </div>
 
           {/* Connected provider list */}
@@ -307,9 +402,12 @@ export function ProviderManager() {
                     </Button>
                   </div>
                 </div>
-                {/* Provider options (thinking mode + 1M context) — only for official Anthropic */}
-                {provider.base_url === 'https://api.anthropic.com' && (
-                  <ProviderOptionsSection providerId={provider.id} />
+                {/* Provider options — thinking/1M for Anthropic-official only */}
+                {provider.provider_type !== 'gemini-image' && provider.base_url === 'https://api.anthropic.com' && (
+                  <ProviderOptionsSection
+                    providerId={provider.id}
+                    showThinkingOptions
+                  />
                 )}
                 {/* Gemini Image model selector — capsule buttons */}
                 {provider.provider_type === 'gemini-image' && (

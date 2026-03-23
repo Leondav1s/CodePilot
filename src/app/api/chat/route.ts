@@ -31,6 +31,13 @@ function loadMcpServers(): Record<string, MCPServerConfig> | undefined {
       ...((settings.mcpServers || {}) as Record<string, MCPServerConfig>),
       ...((projectMcp.mcpServers || {}) as Record<string, MCPServerConfig>),
     };
+    // Apply persistent enabled overrides for project-level servers
+    const settingsOverrides = (settings.mcpServerOverrides || {}) as Record<string, { enabled?: boolean }>;
+    for (const [name, override] of Object.entries(settingsOverrides)) {
+      if (merged[name] && override.enabled !== undefined) {
+        merged[name] = { ...merged[name], enabled: override.enabled };
+      }
+    }
     // Resolve ${...} placeholders in env values against DB settings
     for (const server of Object.values(merged)) {
       if (server.env) {
@@ -41,6 +48,12 @@ function loadMcpServers(): Record<string, MCPServerConfig> | undefined {
             server.env[key] = resolved || '';
           }
         }
+      }
+    }
+    // Filter out persistently disabled servers
+    for (const [name, server] of Object.entries(merged)) {
+      if (server.enabled === false) {
+        delete merged[name];
       }
     }
     return Object.keys(merged).length > 0 ? merged : undefined;
@@ -154,23 +167,10 @@ export async function POST(request: NextRequest) {
       updateSessionProviderId(session_id, persistProviderId);
     }
 
-    // Determine permission mode from chat mode: code → acceptEdits, plan → plan, ask → default (no tools)
-    const effectiveMode = mode || session.mode || 'code';
-    let permissionMode: string;
-    let systemPromptOverride: string | undefined;
-    switch (effectiveMode) {
-      case 'plan':
-        permissionMode = 'plan';
-        break;
-      case 'ask':
-        permissionMode = 'default';
-        systemPromptOverride = (session.system_prompt || '') +
-          '\n\nYou are in Ask mode. Answer questions and provide information only. Do not use any tools, do not read or write files, do not execute commands. Only respond with text.';
-        break;
-      default: // 'code'
-        permissionMode = 'acceptEdits';
-        break;
-    }
+    // Desktop main chat always uses 'code' mode with acceptEdits permissions.
+    // Bridge sessions may override mode via conversation-engine independently.
+    const permissionMode = 'acceptEdits';
+    const systemPromptOverride: string | undefined = undefined;
 
     const abortController = new AbortController();
 
@@ -408,7 +408,7 @@ Start by greeting the user and asking the first question.
         effort: effort as ClaudeStreamOptions['effort'],
         context1m: context_1m,
         generativeUI: generativeUIEnabled,
-        enableFileCheckpointing: enableFileCheckpointing ?? (effectiveMode === 'code'),
+        enableFileCheckpointing: enableFileCheckpointing ?? true,
         autoTrigger: !!autoTrigger,
         onRuntimeStatusChange: (status: string) => {
           try { setSessionRuntimeStatus(session_id, status); } catch { /* best effort */ }

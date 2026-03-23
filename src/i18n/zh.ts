@@ -42,8 +42,8 @@ const zh: Record<TranslationKey, string> = {
   'messageInput.reviewDesc': '审查代码质量',
   'messageInput.terminalSetupDesc': '配置终端设置',
   'messageInput.memoryDesc': '编辑项目记忆文件',
-  'messageInput.modeCode': '代码',
-  'messageInput.modePlan': '计划',
+  // 'messageInput.modeCode': '代码', // Reserved: mode UI removed in latency remediation
+  // 'messageInput.modePlan': '计划', // Reserved: mode UI removed in latency remediation
   'messageInput.aiSuggested': 'AI 推荐',
 
   // ── Streaming message ───────────────────────────────────────
@@ -682,6 +682,15 @@ const zh: Record<TranslationKey, string> = {
   'bridge.qqChannelDesc': '通过 QQ 机器人接收和回复私聊消息',
   'bridge.qqSettings': 'QQ 设置',
   'bridge.qqSettingsDesc': '配置桥接使用的 QQ 机器人凭据',
+  'bridge.weixinChannel': '微信',
+  'bridge.weixinChannelDesc': '通过微信收发消息（扫码登录）',
+  'bridge.weixinSettings': '微信设置',
+  'bridge.weixinSettingsDesc': '配置微信账号用于 Bridge 桥接',
+  'bridge.errorNotEnabled': '桥接未启用，请先打开桥接开关。',
+  'bridge.errorNoChannels': '没有启用任何渠道，请至少启用一个渠道（Telegram、飞书、Discord、QQ 或微信）。',
+  'bridge.errorNoAdapters': '没有适配器成功启动，请检查渠道配置。',
+  'bridge.errorAdapterConfig': '渠道配置无效，请检查已启用渠道的设置。',
+  'bridge.errorNetwork': '启动桥接时网络错误。',
 
   // ── Settings: Discord Bridge ─────────────────────────────────
   'discord.credentials': 'Bot 凭据',
@@ -748,6 +757,45 @@ const zh: Record<TranslationKey, string> = {
   'qq.step3': '点击「测试连接」验证凭据是否有效',
   'qq.step4': '回到桥接主页，打开 QQ 渠道开关，启动桥接',
   'qq.step5': '添加 QQ 机器人为好友并发送消息开始聊天',
+
+  // ── Settings: WeChat Bridge ──────────────────────────────────
+  'weixin.accounts': '账号管理',
+  'weixin.accountsDesc': '管理已关联的微信账号',
+  'weixin.addAccount': '添加账号',
+  'weixin.noAccounts': '暂未关联任何微信账号',
+  'weixin.accountLabel': '标签',
+  'weixin.accountStatus': '状态',
+  'weixin.accountActive': '活跃',
+  'weixin.accountPaused': '已暂停',
+  'weixin.accountExpired': '会话过期',
+  'weixin.accountUpdateFailed': '更新微信账号失败',
+  'weixin.accountUpdateSavedRestartFailed': '账号已更新，但 Bridge 重启失败',
+  'weixin.accountDeleteFailed': '移除微信账号失败',
+  'weixin.accountDeleteSavedRestartFailed': '账号已移除，但 Bridge 重启失败',
+  'weixin.deleteAccount': '移除账号',
+  'weixin.deleteConfirm': '确定要移除此微信账号吗？',
+  'weixin.allowedUsers': '允许的用户',
+  'weixin.allowedUsersDesc': '允许使用此账号的用户 ID，逗号分隔',
+  'weixin.allowedUsersHint': '留空表示允许所有用户',
+  'weixin.qrLogin': '扫码登录',
+  'weixin.qrLoginDesc': '使用微信扫描二维码以关联账号',
+  'weixin.qrWaiting': '等待扫码...',
+  'weixin.qrScanned': '已扫码！请在手机上确认...',
+  'weixin.qrConfirmed': '登录成功！',
+  'weixin.qrConfirmedRestartFailed': '账号已关联，但 Bridge 重启失败',
+  'weixin.qrExpired': '二维码已过期，正在刷新...',
+  'weixin.qrFailed': '登录失败',
+  'weixin.riskWarning': '本功能通过微信 OpenClaw 插件协议连接非 OpenClaw 产品，严格来看可能违反微信使用协议，存在账号风险，请谨慎使用。',
+  'weixin.setupGuide': '设置指南',
+  'weixin.step1': '点击"添加账号"生成二维码',
+  'weixin.step2': '打开手机微信扫描二维码',
+  'weixin.step3': '在手机上确认登录',
+  'weixin.step4': '返回 Bridge 页面，开启微信通道开关并启动 Bridge',
+  'weixin.step5': '向已关联的微信账号发送消息即可开始聊天',
+  'weixin.baseUrl': 'API 基础 URL',
+  'weixin.cdnBaseUrl': 'CDN 基础 URL',
+  'weixin.mediaEnabled': '媒体支持',
+  'weixin.mediaEnabledDesc': '下载和处理微信消息中的媒体附件',
 
   // ── Assistant Workspace ──────────────────────────────
   'settings.assistant': '助理',
@@ -914,6 +962,9 @@ const zh: Record<TranslationKey, string> = {
   'mcp.noRuntimeStatus': '暂无运行状态信息',
   'mcp.reconnect': '重连',
   'mcp.enable': '启用',
+  'mcp.enabled': '已启用',
+  'mcp.disabled': '已禁用',
+  'mcp.managerDesc': '开关控制 CodePilot 注入的 MCP 服务。Claude Code 自身配置中的服务仍可能被 SDK 通过 settingSources 自动加载。',
 
   // ── SDK Capabilities: Thinking ────────────────────────────
   'settings.thinkingMode': '思考模式',
@@ -921,6 +972,9 @@ const zh: Record<TranslationKey, string> = {
   'settings.thinkingAdaptive': '自适应',
   'settings.thinkingEnabled': '启用',
   'settings.thinkingDisabled': '禁用',
+  'settings.defaultModel': '默认模型',
+  'settings.defaultModelDesc': '仅影响新对话，已有对话保持其已选模型不变',
+  'settings.defaultModelAuto': '自动（列表中第一个）',
 
   // ── SDK Capabilities: Account ─────────────────────────────
   'settings.accountInfo': '账户信息',

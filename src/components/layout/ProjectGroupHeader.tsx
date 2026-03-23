@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useTranslation } from '@/hooks/useTranslation';
-import { useClientPlatform } from '@/hooks/useClientPlatform';
 
 interface ProjectGroupHeaderProps {
   workingDirectory: string;
@@ -42,7 +41,6 @@ export function ProjectGroupHeader({
   onCreateSession,
 }: ProjectGroupHeaderProps) {
   const { t } = useTranslation();
-  const { fileManagerName } = useClientPlatform();
 
   return (
     <Tooltip>
@@ -53,20 +51,6 @@ export function ProjectGroupHeader({
             "hover:bg-accent/50"
           )}
           onClick={onToggle}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            if (workingDirectory) {
-              if (window.electronAPI?.shell?.openPath) {
-                window.electronAPI.shell.openPath(workingDirectory);
-              } else {
-                fetch('/api/files/open', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ path: workingDirectory }),
-                }).catch(() => {});
-              }
-            }
-          }}
           onMouseEnter={onMouseEnter}
           onMouseLeave={onMouseLeave}
         >
@@ -115,7 +99,6 @@ export function ProjectGroupHeader({
       </TooltipTrigger>
       <TooltipContent side="right" className="max-w-xs">
         <p className="text-xs break-all">{workingDirectory || t('chatList.noSessions')}</p>
-        {workingDirectory && <p className="text-[10px] text-muted-foreground mt-0.5">{t('platform.openInFileManager', { fileManager: fileManagerName })}</p>}
       </TooltipContent>
     </Tooltip>
   );
