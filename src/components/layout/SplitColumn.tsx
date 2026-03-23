@@ -25,7 +25,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
   const [sessionModel, setSessionModel] = useState("");
   const [sessionProviderId, setSessionProviderId] = useState("");
   const [sessionInfoLoaded, setSessionInfoLoaded] = useState(false);
-  const [sessionMode, setSessionMode] = useState("");
   const [projectName, setProjectName] = useState("");
   const [sessionWorkingDir, setSessionWorkingDir] = useState("");
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle } = usePanel();
@@ -46,7 +45,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
           setSessionTitle(data.session.title || t("chat.newConversation"));
           setSessionModel(data.session.model || "");
           setSessionProviderId(data.session.provider_id || "");
-          setSessionMode(data.session.mode || "code");
           setProjectName(data.session.project_name || "");
           setSessionWorkingDir(data.session.working_directory || "");
         }
@@ -185,7 +183,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
           initialMessages={messages}
           initialHasMore={hasMore}
           modelName={sessionModel}
-          initialMode={sessionMode}
           providerId={sessionProviderId}
         />
       </div>

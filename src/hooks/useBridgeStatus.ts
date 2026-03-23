@@ -22,7 +22,7 @@ export function useBridgeStatus(): {
   bridgeStatus: BridgeStatus | null;
   starting: boolean;
   stopping: boolean;
-  startBridge: () => Promise<void>;
+  startBridge: () => Promise<string | null>;
   stopBridge: () => Promise<void>;
   refreshStatus: () => Promise<void>;
 } {
@@ -62,17 +62,22 @@ export function useBridgeStatus(): {
     };
   }, [bridgeStatus?.running, refreshStatus]);
 
-  const startBridge = useCallback(async () => {
+  const startBridge = useCallback(async (): Promise<string | null> => {
     setStarting(true);
     try {
-      await fetch("/api/bridge", {
+      const res = await fetch("/api/bridge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "start" }),
       });
+      const data = await res.json();
       await refreshStatus();
+      if (!data.ok && data.reason) {
+        return data.reason;
+      }
+      return null;
     } catch {
-      // ignore
+      return 'network_error';
     } finally {
       setStarting(false);
     }

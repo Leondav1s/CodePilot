@@ -45,6 +45,13 @@ function loadMcpServers(): Record<string, MCPServerConfig> | undefined {
       ...((settings.mcpServers || {}) as Record<string, MCPServerConfig>),
       ...((projectMcp.mcpServers || {}) as Record<string, MCPServerConfig>),
     };
+    // Apply persistent enabled overrides for project-level servers
+    const settingsOverrides = (settings.mcpServerOverrides || {}) as Record<string, { enabled?: boolean }>;
+    for (const [name, override] of Object.entries(settingsOverrides)) {
+      if (merged[name] && override.enabled !== undefined) {
+        merged[name] = { ...merged[name], enabled: override.enabled };
+      }
+    }
     // Resolve ${...} placeholders in env values against DB settings
     for (const server of Object.values(merged)) {
       if (server.env) {
@@ -55,6 +62,12 @@ function loadMcpServers(): Record<string, MCPServerConfig> | undefined {
             server.env[key] = resolved || '';
           }
         }
+      }
+    }
+    // Filter out persistently disabled servers
+    for (const [name, server] of Object.entries(merged)) {
+      if (server.enabled === false) {
+        delete merged[name];
       }
     }
     return Object.keys(merged).length > 0 ? merged : undefined;
@@ -99,6 +112,17 @@ export interface ConversationResult {
   permissionRequests: PermissionRequestInfo[];
   /** SDK session ID captured from status/result events, for session resume */
   sdkSessionId: string | null;
+}
+
+/**
+ * Resolve and validate working directory from multiple candidates.
+ * Returns the first existing directory, or HOME as last resort.
+ */
+function resolveWorkingDirectory(...candidates: (string | undefined | null)[]): string {
+  for (const dir of candidates) {
+    if (dir && fs.existsSync(dir)) return dir;
+  }
+  return os.homedir();
 }
 
 /**
@@ -218,6 +242,23 @@ export async function processMessage(
     const mcpServers = loadMcpServers();
     const usesStandardTextProvider = new Set(['google', 'openai-compatible', 'openrouter']).has(resolved.protocol);
 
+    // Resolve a valid working directory from multiple candidates
+    const effectiveCwd = resolveWorkingDirectory(
+      binding.workingDirectory,
+      session?.working_directory,
+      getSetting('bridge_default_work_dir'),
+    );
+
+    // If the effective cwd differs from what the binding/session had, the
+    // original directory is gone — clear sdkSessionId to prevent stale resume.
+    const originalCwd = binding.workingDirectory || session?.working_directory;
+    const cwdChanged = originalCwd && effectiveCwd !== originalCwd;
+    const effectiveSdkSessionId = cwdChanged ? undefined : (binding.sdkSessionId || undefined);
+
+    if (cwdChanged) {
+      console.log(`[conversation-engine] CWD changed from "${originalCwd}" to "${effectiveCwd}", clearing sdkSessionId`);
+    }
+
     const stream = usesStandardTextProvider
       ? streamSSEFromProvider({
           providerId: session?.provider_id || '',
@@ -230,10 +271,10 @@ export async function processMessage(
       : streamClaude({
           prompt: text,
           sessionId,
-          sdkSessionId: binding.sdkSessionId || undefined,
+          sdkSessionId: effectiveSdkSessionId,
           model: effectiveModel,
           systemPrompt: session?.system_prompt || undefined,
-          workingDirectory: binding.workingDirectory || session?.working_directory || undefined,
+          workingDirectory: effectiveCwd,
           abortController,
           permissionMode,
           provider: resolvedProvider,
@@ -396,10 +437,17 @@ async function consumeStream(
             break;
           }
 
-          case 'error':
+          case 'error': {
             hasError = true;
-            errorMessage = event.data || 'Unknown error';
+            // Parse structured error JSON to extract a user-friendly message
+            try {
+              const errObj = JSON.parse(event.data);
+              errorMessage = errObj.userMessage || errObj._formattedMessage || errObj.message || event.data;
+            } catch {
+              errorMessage = event.data || 'Unknown error';
+            }
             break;
+          }
 
           case 'result': {
             try {

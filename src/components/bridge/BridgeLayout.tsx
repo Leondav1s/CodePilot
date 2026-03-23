@@ -9,10 +9,11 @@ import { TelegramBridgeSection } from "./TelegramBridgeSection";
 import { FeishuBridgeSection } from "./FeishuBridgeSection";
 import { DiscordBridgeSection } from "./DiscordBridgeSection";
 import { QqBridgeSection } from "./QqBridgeSection";
+import { WeixinBridgeSection } from "./WeixinBridgeSection";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 
-type Section = "bridge" | "telegram" | "feishu" | "discord" | "qq";
+type Section = "bridge" | "telegram" | "feishu" | "discord" | "qq" | "weixin";
 
 interface SidebarItem {
   id: Section;
@@ -26,6 +27,7 @@ const sidebarItems: SidebarItem[] = [
   { id: "feishu", label: "Feishu", icon: ChatTeardrop },
   { id: "discord", label: "Discord", icon: GameController },
   { id: "qq", label: "QQ", icon: ChatsCircle },
+  { id: "weixin", label: "WeChat", icon: ChatTeardrop },
 ];
 
 function getSectionFromHash(): Section {
@@ -55,6 +57,7 @@ export function BridgeLayout() {
     'Feishu': 'bridge.feishuSettings',
     'Discord': 'bridge.discordSettings',
     'QQ': 'bridge.qqSettings',
+    'WeChat': 'bridge.weixinSettings',
   };
 
   const handleSectionChange = useCallback((section: Section) => {
@@ -98,6 +101,7 @@ export function BridgeLayout() {
           {activeSection === "feishu" && <FeishuBridgeSection />}
           {activeSection === "discord" && <DiscordBridgeSection />}
           {activeSection === "qq" && <QqBridgeSection />}
+          {activeSection === "weixin" && <WeixinBridgeSection />}
         </div>
       </div>
     </div>

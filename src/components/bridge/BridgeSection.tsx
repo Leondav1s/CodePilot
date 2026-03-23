@@ -16,6 +16,7 @@ import {
 import { SpinnerGap, CheckCircle, Warning, TelegramLogo, ChatTeardrop, GameController, ChatsCircle } from "@/components/ui/icon";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import { showToast } from "@/hooks/useToast";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
 import { StatusBanner } from "@/components/patterns/StatusBanner";
@@ -27,6 +28,7 @@ interface BridgeSettings {
   bridge_feishu_enabled: string;
   bridge_discord_enabled: string;
   bridge_qq_enabled: string;
+  bridge_weixin_enabled: string;
   bridge_auto_start: string;
   bridge_default_work_dir: string;
   bridge_default_model: string;
@@ -39,6 +41,7 @@ const DEFAULT_SETTINGS: BridgeSettings = {
   bridge_feishu_enabled: "",
   bridge_discord_enabled: "",
   bridge_qq_enabled: "",
+  bridge_weixin_enabled: "",
   bridge_auto_start: "",
   bridge_default_work_dir: "",
   bridge_default_model: "",
@@ -133,6 +136,10 @@ export function BridgeSection() {
     saveSettings({ bridge_qq_enabled: checked ? "true" : "" });
   };
 
+  const handleToggleWeixin = (checked: boolean) => {
+    saveSettings({ bridge_weixin_enabled: checked ? "true" : "" });
+  };
+
   const handleSaveDefaults = () => {
     // Split composite "provider_id::model" value
     const parts = model.split("::");
@@ -168,11 +175,28 @@ export function BridgeSection() {
     saveSettings({ bridge_auto_start: checked ? "true" : "" });
   };
 
+  const handleStartBridge = async () => {
+    const reason = await startBridge();
+    if (reason) {
+      const reasonMessages: Record<string, string> = {
+        bridge_not_enabled: t("bridge.errorNotEnabled"),
+        no_channels_enabled: t("bridge.errorNoChannels"),
+        no_adapters_started: t("bridge.errorNoAdapters"),
+        network_error: t("bridge.errorNetwork"),
+      };
+      const message = reason.startsWith("adapter_config_invalid:")
+        ? t("bridge.errorAdapterConfig")
+        : reasonMessages[reason] ?? reason;
+      showToast({ type: "error", message });
+    }
+  };
+
   const isEnabled = settings.remote_bridge_enabled === "true";
   const isTelegramEnabled = settings.bridge_telegram_enabled === "true";
   const isFeishuEnabled = settings.bridge_feishu_enabled === "true";
   const isDiscordEnabled = settings.bridge_discord_enabled === "true";
   const isQQEnabled = settings.bridge_qq_enabled === "true";
+  const isWeixinEnabled = settings.bridge_weixin_enabled === "true";
   const isAutoStart = settings.bridge_auto_start === "true";
   const isRunning = bridgeStatus?.running ?? false;
   const adapterCount = bridgeStatus?.adapters?.length ?? 0;
@@ -242,7 +266,7 @@ export function BridgeSection() {
               ) : (
                 <Button
                   size="sm"
-                  onClick={startBridge}
+                  onClick={handleStartBridge}
                   disabled={starting}
                 >
                   {starting ? (
@@ -322,6 +346,21 @@ export function BridgeSection() {
               <Switch
                 checked={isQQEnabled}
                 onCheckedChange={handleToggleQQ}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border/30 pt-3">
+              <div className="flex items-center gap-3">
+                <ChatTeardrop size={16} className="text-muted-foreground" />
+                <div>
+                  <p className="text-sm">{t("bridge.weixinChannel")}</p>
+                  <p className="text-xs text-muted-foreground">{t("bridge.weixinChannelDesc")}</p>
+                </div>
+              </div>
+              <Switch
+                checked={isWeixinEnabled}
+                onCheckedChange={handleToggleWeixin}
                 disabled={saving}
               />
             </div>

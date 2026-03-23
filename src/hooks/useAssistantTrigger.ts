@@ -166,7 +166,7 @@ export function useAssistantTrigger({
 
       const today = getLocalDateString();
       const needsOnboarding = !state.onboardingComplete;
-      const needsCheckIn = state.onboardingComplete && state.lastCheckInDate !== today;
+      const needsCheckIn = state.onboardingComplete && state.dailyCheckInEnabled === true && state.lastCheckInDate !== today;
 
       if (!needsOnboarding && !needsCheckIn) return;
 

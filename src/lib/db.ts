@@ -711,6 +711,33 @@ function migrateDb(db: Database.Database): void {
       UNIQUE(channel_type, account_id)
     );
   `);
+
+  // WeChat: bot accounts for multi-account support
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weixin_accounts (
+      account_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      base_url TEXT NOT NULL DEFAULT '',
+      cdn_base_url TEXT NOT NULL DEFAULT '',
+      token TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_login_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // WeChat: per-peer context token persistence
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weixin_context_tokens (
+      account_id TEXT NOT NULL,
+      peer_user_id TEXT NOT NULL,
+      context_token TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(account_id, peer_user_id)
+    );
+  `);
 }
 
 // ==========================================
@@ -804,17 +831,29 @@ export function updateSessionProviderId(id: string, providerId: string): void {
 }
 
 export function getDefaultProviderId(): string | undefined {
+  // Primary source: derived from global default model's provider
+  const globalProvider = getSetting('global_default_model_provider');
+  if (globalProvider) return globalProvider;
+  // Legacy fallback: old default_provider_id setting (for migration)
   return getSetting('default_provider_id') || undefined;
 }
 
 export function setDefaultProviderId(id: string): void {
+  // Write legacy setting
   setSetting('default_provider_id', id);
+  // Also write the primary key so getDefaultProviderId() sees the change.
+  // Clear global_default_model at the same time — the old model belonged to
+  // the previous provider and is no longer valid. The UI will fall back to
+  // the provider's first model until the user picks a new default.
+  setSetting('global_default_model_provider', id);
+  setSetting('global_default_model', '');
 }
 
 export function updateSessionWorkingDirectory(id: string, workingDirectory: string): void {
   const db = getDb();
   const projectName = path.basename(workingDirectory);
-  db.prepare('UPDATE chat_sessions SET working_directory = ?, project_name = ? WHERE id = ?').run(workingDirectory, projectName, id);
+  // Sync sdk_cwd + clear sdk_session_id — old session context is invalid
+  db.prepare('UPDATE chat_sessions SET working_directory = ?, sdk_cwd = ?, project_name = ?, sdk_session_id = ? WHERE id = ?').run(workingDirectory, workingDirectory, projectName, '', id);
 }
 
 export function updateSessionMode(id: string, mode: string): void {
@@ -1157,10 +1196,21 @@ export function deleteProvider(id: string): boolean {
  * For DB providers, reads from options_json column.
  */
 export function getProviderOptions(providerId: string): import('@/types').ProviderOptions {
+  if (providerId === '__global__') {
+    const defaultModel = getSetting('global_default_model') || undefined;
+    const defaultModelProvider = getSetting('global_default_model_provider') || undefined;
+    return {
+      ...(defaultModel ? { default_model: defaultModel } : {}),
+      ...(defaultModelProvider ? { default_model_provider: defaultModelProvider } : {}),
+    };
+  }
   if (providerId === 'env') {
     const thinkingMode = getSetting('thinking_mode') || 'adaptive';
     const context1m = getSetting('context_1m') === 'true';
-    return { thinking_mode: thinkingMode as 'adaptive' | 'enabled' | 'disabled', context_1m: context1m };
+    return {
+      thinking_mode: thinkingMode as 'adaptive' | 'enabled' | 'disabled',
+      context_1m: context1m,
+    };
   }
   const provider = getProvider(providerId);
   if (!provider) return {};
@@ -1174,6 +1224,15 @@ export function getProviderOptions(providerId: string): import('@/types').Provid
  * For DB providers, writes to options_json column.
  */
 export function setProviderOptions(providerId: string, options: import('@/types').ProviderOptions): void {
+  if (providerId === '__global__') {
+    if (options.default_model !== undefined) setSetting('global_default_model', options.default_model);
+    if (options.default_model_provider !== undefined) setSetting('global_default_model_provider', options.default_model_provider);
+    // Sync legacy default_provider_id so backend consumers (doctor, repair, etc.) stay consistent
+    if ((options as Record<string, unknown>).legacy_default_provider_id !== undefined) {
+      setSetting('default_provider_id', (options as Record<string, unknown>).legacy_default_provider_id as string);
+    }
+    return;
+  }
   if (providerId === 'env') {
     if (options.thinking_mode !== undefined) setSetting('thinking_mode', options.thinking_mode);
     if (options.context_1m !== undefined) setSetting('context_1m', options.context_1m ? 'true' : '');
@@ -2092,6 +2151,112 @@ export function markPermissionLinkResolved(permissionRequestId: string): boolean
     'UPDATE channel_permission_links SET resolved = 1 WHERE permission_request_id = ? AND resolved = 0'
   ).run(permissionRequestId);
   return result.changes > 0;
+}
+
+// ==========================================
+// WeChat Account Operations
+// ==========================================
+
+export interface WeixinAccountRow {
+  account_id: string;
+  user_id: string;
+  base_url: string;
+  cdn_base_url: string;
+  token: string;
+  name: string;
+  enabled: number;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listWeixinAccounts(): WeixinAccountRow[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM weixin_accounts ORDER BY created_at DESC').all() as WeixinAccountRow[];
+}
+
+export function getWeixinAccount(accountId: string): WeixinAccountRow | undefined {
+  const db = getDb();
+  return db.prepare('SELECT * FROM weixin_accounts WHERE account_id = ?').get(accountId) as WeixinAccountRow | undefined;
+}
+
+export function upsertWeixinAccount(params: {
+  accountId: string;
+  userId?: string;
+  baseUrl?: string;
+  cdnBaseUrl?: string;
+  token?: string;
+  name?: string;
+  enabled?: boolean;
+}): void {
+  const db = getDb();
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  db.prepare(`
+    INSERT INTO weixin_accounts (account_id, user_id, base_url, cdn_base_url, token, name, enabled, last_login_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id) DO UPDATE SET
+      user_id = COALESCE(excluded.user_id, weixin_accounts.user_id),
+      base_url = COALESCE(excluded.base_url, weixin_accounts.base_url),
+      cdn_base_url = COALESCE(excluded.cdn_base_url, weixin_accounts.cdn_base_url),
+      token = COALESCE(excluded.token, weixin_accounts.token),
+      name = COALESCE(excluded.name, weixin_accounts.name),
+      enabled = excluded.enabled,
+      last_login_at = excluded.last_login_at,
+      updated_at = excluded.updated_at
+  `).run(
+    params.accountId,
+    params.userId || '',
+    params.baseUrl || '',
+    params.cdnBaseUrl || '',
+    params.token || '',
+    params.name || '',
+    params.enabled !== false ? 1 : 0,
+    now,
+    now,
+    now,
+  );
+}
+
+export function deleteWeixinAccount(accountId: string): boolean {
+  const db = getDb();
+  // Also clean up context tokens and offsets
+  db.prepare('DELETE FROM weixin_context_tokens WHERE account_id = ?').run(accountId);
+  db.prepare('DELETE FROM channel_offsets WHERE channel_type = ?').run(`weixin:${accountId}`);
+  const result = db.prepare('DELETE FROM weixin_accounts WHERE account_id = ?').run(accountId);
+  return result.changes > 0;
+}
+
+export function setWeixinAccountEnabled(accountId: string, enabled: boolean): void {
+  const db = getDb();
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  db.prepare(
+    'UPDATE weixin_accounts SET enabled = ?, updated_at = ? WHERE account_id = ?'
+  ).run(enabled ? 1 : 0, now, accountId);
+}
+
+export function getWeixinContextToken(accountId: string, peerUserId: string): string | undefined {
+  const db = getDb();
+  const row = db.prepare(
+    'SELECT context_token FROM weixin_context_tokens WHERE account_id = ? AND peer_user_id = ?'
+  ).get(accountId, peerUserId) as { context_token: string } | undefined;
+  return row?.context_token;
+}
+
+export function upsertWeixinContextToken(accountId: string, peerUserId: string, contextToken: string): void {
+  const db = getDb();
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  db.prepare(`
+    INSERT INTO weixin_context_tokens (account_id, peer_user_id, context_token, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(account_id, peer_user_id) DO UPDATE SET
+      context_token = excluded.context_token,
+      updated_at = excluded.updated_at
+  `).run(accountId, peerUserId, contextToken, now);
+}
+
+export function deleteWeixinContextTokensByAccount(accountId: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM weixin_context_tokens WHERE account_id = ?').run(accountId);
 }
 
 // ==========================================

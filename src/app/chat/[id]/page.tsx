@@ -20,7 +20,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [sessionModel, setSessionModel] = useState<string>('');
   const [sessionProviderId, setSessionProviderId] = useState<string>('');
-  const [sessionMode, setSessionMode] = useState<string>('');
   const [sessionInfoLoaded, setSessionInfoLoaded] = useState(false);
   const [sessionPermissionProfile, setSessionPermissionProfile] = useState<'default' | 'full_access'>('default');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle } = usePanel();
@@ -33,7 +32,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setWorkingDirectory('');
     setSessionModel('');
     setSessionProviderId('');
-    setSessionMode('');
     setSessionInfoLoaded(false);
 
     async function loadSession() {
@@ -53,7 +51,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           setPanelSessionTitle(title);
           setSessionModel(data.session.model || '');
           setSessionProviderId(data.session.provider_id || '');
-          setSessionMode(data.session.mode || 'code');
           setSessionPermissionProfile(data.session.permission_profile || 'default');
         }
       } catch {
@@ -127,7 +124,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} initialMode={sessionMode} providerId={sessionProviderId} initialPermissionProfile={sessionPermissionProfile} />
+      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} providerId={sessionProviderId} initialPermissionProfile={sessionPermissionProfile} />
     </div>
   );
 }

@@ -31,12 +31,11 @@ interface ChatViewProps {
   initialMessages?: Message[];
   initialHasMore?: boolean;
   modelName?: string;
-  initialMode?: string;
   providerId?: string;
   initialPermissionProfile?: 'default' | 'full_access';
 }
 
-export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialMode, providerId, initialPermissionProfile }: ChatViewProps) {
+export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, providerId, initialPermissionProfile }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory, setPendingApprovalSessionId } = usePanel();
   const { t } = useTranslation();
   const router = useRouter();
@@ -48,7 +47,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
-  const [mode, setMode] = useState(initialMode || 'code');
+  const [mode, setMode] = useState('code'); // Desktop chat always uses 'code'
   const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
   const [currentProviderId, setCurrentProviderId] = useState(() => providerId || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') : null) || '');
   const [selectedEffort, setSelectedEffort] = useState<string | undefined>(undefined);
@@ -147,7 +146,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     }
   }, [initialMessages]);
 
-  useEffect(() => { if (initialMode) setMode(initialMode); }, [initialMode]);
   useEffect(() => { setHasMore(initialHasMore); }, [initialHasMore]);
 
   const buildThinkingConfig = useCallback((): { type: string } | undefined => {

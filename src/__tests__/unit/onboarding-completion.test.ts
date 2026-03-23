@@ -243,7 +243,8 @@ describe('onboarding completion + workspace state integration', () => {
     const state = loadState(workDir);
     state.onboardingComplete = true;
     state.lastCheckInDate = today;
-    state.schemaVersion = 3;
+    state.schemaVersion = 4;
+    state.dailyCheckInEnabled = true;
     saveState(workDir, state);
 
     const reloaded = loadState(workDir);
@@ -261,7 +262,8 @@ describe('onboarding completion + workspace state integration', () => {
     const state = loadState(workDir);
     state.onboardingComplete = true;
     state.lastCheckInDate = '2020-01-01'; // yesterday or earlier
-    state.schemaVersion = 3;
+    state.schemaVersion = 4;
+    state.dailyCheckInEnabled = true;
     saveState(workDir, state);
 
     const reloaded = loadState(workDir);

@@ -23,6 +23,7 @@ export type ClaudeErrorCategory =
   | 'CLI_INSTALL_CONFLICT'
   | 'MISSING_GIT_BASH'
   | 'RESUME_FAILED'
+  | 'SESSION_STATE_ERROR'
   | 'PROVIDER_NOT_APPLIED'
   | 'PROCESS_CRASH'
   | 'UNKNOWN';
@@ -201,12 +202,45 @@ const ERROR_PATTERNS: ErrorPattern[] = [
   },
 
   // ── Resume failed ──
+  // Must be before PROCESS_CRASH so session-related crashes don't get
+  // misclassified as provider configuration problems.
   {
     category: 'RESUME_FAILED',
-    patterns: ['resume failed', 'session not found', 'invalid session', 'session expired'],
+    patterns: [
+      'resume failed',
+      'session not found',
+      'invalid session',
+      'session expired',
+      'could not resume',
+      'failed to resume',
+      'resume_failed',
+      'conversation not found',
+      /session\s+id\s+.*\s*(invalid|expired|not found|missing)/,
+    ],
     userMessage: () => 'Failed to resume previous conversation.',
     actionHint: () => 'The conversation will start fresh automatically. No action needed.',
     retryable: false,
+  },
+
+  // ── Session state error ──
+  // Catches stale/corrupt session state that causes CLI crashes.
+  // Must be before PROCESS_CRASH to prevent misclassification as provider issues.
+  {
+    category: 'SESSION_STATE_ERROR',
+    patterns: [
+      'stale session',
+      'stale sdk_session',
+      'session state',
+      'session_state',
+      'corrupt session',
+      'session mismatch',
+      'session context',
+      /sdk_session_id.*(?:invalid|stale|expired|corrupt|mismatch)/,
+      /(?:invalid|stale|expired|corrupt)\s*(?:session|sdk_session)/,
+    ],
+    userMessage: () => 'Session state is invalid or corrupted.',
+    actionHint: () => 'The stored session state has become stale. Please start a new conversation, or retry — the session will be automatically reset.',
+    retryable: true,
   },
 
   // ── Process crash (exit code) ──
@@ -226,6 +260,14 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     actionHint: () => 'Check your API key and provider settings. Run Provider Doctor in Settings for detailed diagnostics.',
     retryable: false,
   },
+];
+
+// ── Session-related keywords for PROCESS_CRASH refinement ────
+// When a process crash stderr contains these keywords, the error is likely
+// a session state issue rather than a provider configuration problem.
+const SESSION_RELATED_KEYWORDS = [
+  'resume', 'session', 'sdk_session', 'conversation_id',
+  'stale', 'corrupt', 'session_id',
 ];
 
 // ── Classifier ──────────────────────────────────────────────────
@@ -260,6 +302,25 @@ export function classifyError(ctx: ErrorContext): ClassifiedError {
     });
 
     if (matched) {
+      // Refinement: if matched as PROCESS_CRASH but stderr contains
+      // session-related keywords, reclassify as SESSION_STATE_ERROR
+      // to avoid misleading "check API Key / Base URL" prompts.
+      if (pattern.category === 'PROCESS_CRASH') {
+        const hasSessionKeywords = SESSION_RELATED_KEYWORDS.some(kw =>
+          searchText.includes(kw),
+        );
+        if (hasSessionKeywords) {
+          return {
+            category: 'SESSION_STATE_ERROR',
+            userMessage: 'Session state is invalid or corrupted.',
+            actionHint: 'The stored session state has become stale. Please start a new conversation, or retry — the session will be automatically reset.',
+            rawMessage,
+            providerName: ctx.providerName,
+            details: extraDetail || undefined,
+            retryable: true,
+          };
+        }
+      }
       return buildResult(pattern, ctx, rawMessage, extraDetail);
     }
   }

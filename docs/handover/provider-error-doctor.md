@@ -58,8 +58,9 @@ provider-changed 事件 → 同步 localStorage
 onProviderModelChange → 写入 localStorage
 ```
 
-**新增 provider 自动设默认流程：**
-- 首个 provider → 自动设为默认
+**全局默认模型机制：**
+- 不再有独立的"默认服务商"概念，改为使用全局默认模型（`global_default_model` + `global_default_model_provider`）决定新对话的 provider 和 model
+- 首个 provider → 自动设为全局默认模型的 provider
 - 已有 provider → `confirm()` 询问是否切换
 - 写入 DB (`set-default` API) + localStorage
 
@@ -100,7 +101,7 @@ GET /api/doctor → runDiagnosis()
 
 | 动作 | 触发条件 | 效果 |
 |------|---------|------|
-| set-default-provider | provider.no-default | 设置第一个 provider 为默认 |
+| set-default-provider | provider.no-default | 设置第一个 provider 为默认；同时写入 `default_provider_id` 和 `global_default_model_provider`，并清空 `global_default_model`（旧 model 不再有效） |
 | apply-provider-to-session | auth.resolved-no-creds | 将默认 provider 赋给无 provider 的 session |
 | clear-stale-resume | features.stale-session-id | 清理所有 stale sdk_session_id |
 | switch-auth-style | auth.style-mismatch | 在 provider extra_env 中切换 API_KEY ↔ AUTH_TOKEN |
@@ -134,6 +135,7 @@ GET /api/doctor → runDiagnosis()
 | `src/app/api/doctor/repair/route.ts` | 修复 API（5 种动作） |
 | `src/app/api/doctor/export/route.ts` | 脱敏日志导出 |
 | `src/app/api/providers/set-default/route.ts` | 设置默认 provider |
+| `src/lib/db.ts` | `getDefaultProviderId()` / `setDefaultProviderId()` — 默认服务商读写 |
 | `src/components/settings/ProviderDoctorDialog.tsx` | 诊断 UI |
 | `src/components/settings/ProviderManager.tsx` | 诊断入口（设置项样式） |
 

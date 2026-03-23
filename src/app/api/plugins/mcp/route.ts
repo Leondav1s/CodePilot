@@ -47,15 +47,32 @@ export async function GET(): Promise<NextResponse<MCPConfigResponse | ErrorRespo
     const settingsServers = (settings.mcpServers || {}) as Record<string, MCPServerConfig>;
     const userConfigServers = (userConfig.mcpServers || {}) as Record<string, MCPServerConfig>;
 
-    // Merge: ~/.claude/settings.json takes precedence over ~/.claude.json
+    // Also read project-level .mcp.json so the UI can display and toggle project servers
+    const projectMcp = readJsonFile(path.join(process.cwd(), '.mcp.json'));
+    const projectServers = (projectMcp.mcpServers || {}) as Record<string, MCPServerConfig>;
+
+    // Merge: settings.json > claude.json > project .mcp.json
     // Tag each server with _source so UI knows where it came from
     const mcpServers: Record<string, MCPServerConfig & { _source?: string }> = {};
+    for (const [name, server] of Object.entries(projectServers)) {
+      mcpServers[name] = { ...server, _source: 'project' };
+    }
     for (const [name, server] of Object.entries(userConfigServers)) {
       mcpServers[name] = { ...server, _source: 'claude.json' };
     }
     for (const [name, server] of Object.entries(settingsServers)) {
       mcpServers[name] = { ...server, _source: 'settings.json' };
     }
+
+    // For project-source servers, check if settings.json has an enabled override
+    // (project .mcp.json is read-only; we persist enabled state to settings.json)
+    const settingsOverrides = (settings.mcpServerOverrides || {}) as Record<string, { enabled?: boolean }>;
+    for (const [name, server] of Object.entries(mcpServers)) {
+      if (server._source === 'project' && settingsOverrides[name]?.enabled !== undefined) {
+        mcpServers[name] = { ...server, enabled: settingsOverrides[name].enabled };
+      }
+    }
+
     return NextResponse.json({ mcpServers });
   } catch (error) {
     return NextResponse.json(
@@ -77,10 +94,17 @@ export async function PUT(
     // Servers with _source='claude.json' → ~/.claude.json
     const forSettings: Record<string, MCPServerConfig> = {};
     const forUserConfig: Record<string, MCPServerConfig> = {};
+    let forProjectOverrides: Record<string, { enabled?: boolean }> | undefined;
 
     for (const [name, server] of Object.entries(incoming)) {
       const { _source, ...cleanServer } = server;
-      if (_source === 'claude.json') {
+      if (_source === 'project') {
+        // Project servers are read-only — only persist enabled override to settings.json
+        if (cleanServer.enabled !== undefined) {
+          if (!forProjectOverrides) forProjectOverrides = {};
+          forProjectOverrides[name] = { enabled: cleanServer.enabled };
+        }
+      } else if (_source === 'claude.json') {
         forUserConfig[name] = cleanServer;
       } else {
         forSettings[name] = cleanServer;
@@ -90,6 +114,9 @@ export async function PUT(
     // Write settings.json
     const settings = readSettings();
     settings.mcpServers = forSettings;
+    if (forProjectOverrides) {
+      settings.mcpServerOverrides = forProjectOverrides;
+    }
     writeSettings(settings);
 
     // Write ~/.claude.json (only the mcpServers key, preserve other fields)

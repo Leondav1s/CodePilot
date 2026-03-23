@@ -68,7 +68,7 @@ export async function forwardPermissionRequest(
 
   // Channels without inline button support (e.g. QQ) need text-based
   // permission commands. Check if the adapter ignores inlineButtons.
-  const supportsButtons = adapter.channelType !== 'qq';
+  const supportsButtons = !['qq', 'weixin'].includes(adapter.channelType);
 
   const textLines = [
     `<b>Permission Required</b>`,

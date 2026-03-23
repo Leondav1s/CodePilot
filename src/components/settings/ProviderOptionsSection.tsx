@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -15,14 +15,15 @@ import type { ProviderOptions } from "@/types";
 
 interface ProviderOptionsSectionProps {
   providerId: string;
+  /** Show thinking mode + 1M context options (only for Anthropic-compatible providers) */
+  showThinkingOptions?: boolean;
 }
 
 /**
  * Per-provider options: thinking mode + 1M context toggle.
- * Only rendered for providers that support these features
- * (env / anthropic-official).
+ * Only rendered when `showThinkingOptions` is true.
  */
-export function ProviderOptionsSection({ providerId }: ProviderOptionsSectionProps) {
+export function ProviderOptionsSection({ providerId, showThinkingOptions = false }: ProviderOptionsSectionProps) {
   const { t } = useTranslation();
   const [options, setOptions] = useState<ProviderOptions>({
     thinking_mode: 'adaptive',
@@ -32,16 +33,13 @@ export function ProviderOptionsSection({ providerId }: ProviderOptionsSectionPro
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/providers/options?providerId=${encodeURIComponent(providerId)}`);
-        if (!cancelled && res.ok) {
-          const data = await res.json();
-          setOptions(data.options || {});
-        }
-      } catch { /* ignore */ }
-      if (!cancelled) setLoaded(true);
-    })();
+    fetch(`/api/providers/options?providerId=${encodeURIComponent(providerId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!cancelled && data) setOptions(data.options || {});
+        if (!cancelled) setLoaded(true);
+      })
+      .catch(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
   }, [providerId]);
 
@@ -57,7 +55,7 @@ export function ProviderOptionsSection({ providerId }: ProviderOptionsSectionPro
     } catch { /* ignore */ }
   };
 
-  if (!loaded) return null;
+  if (!loaded || !showThinkingOptions) return null;
 
   return (
     <div className="ml-[34px] mt-2 space-y-2.5">

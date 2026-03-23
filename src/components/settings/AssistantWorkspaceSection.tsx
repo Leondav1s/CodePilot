@@ -436,7 +436,7 @@ export function AssistantWorkspaceSection() {
           lastCheckInDate={workspace.state?.lastCheckInDate ?? null}
           checkInDoneToday={checkInDoneToday}
           creatingSession={creatingSession}
-          autoTriggerEnabled={workspace.state?.dailyCheckInEnabled !== false}
+          autoTriggerEnabled={workspace.state?.dailyCheckInEnabled === true}
           onStartCheckIn={handleStartCheckIn}
           onAutoTriggerChange={async (enabled) => {
             try {

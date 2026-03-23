@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trash, PencilSimple, HardDrives, WifiHigh, Globe, ArrowsClockwise, SpinnerGap } from "@/components/ui/icon";
+import { Switch } from '@/components/ui/switch';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import type { MCPServer } from '@/types';
@@ -19,6 +20,7 @@ interface McpServerListProps {
   servers: Record<string, MCPServer>;
   onEdit: (name: string, server: MCPServer) => void;
   onDelete: (name: string) => void;
+  onToggleEnabled?: (name: string, enabled: boolean) => void;
   runtimeStatus?: McpRuntimeStatus[];
   activeSessionId?: string;
 }
@@ -52,7 +54,7 @@ function getStatusBadge(status: McpRuntimeStatus['status']) {
   }
 }
 
-export function McpServerList({ servers, onEdit, onDelete, runtimeStatus, activeSessionId }: McpServerListProps) {
+export function McpServerList({ servers, onEdit, onDelete, onToggleEnabled, runtimeStatus, activeSessionId }: McpServerListProps) {
   const { t } = useTranslation();
   const entries = Object.entries(servers);
   const [reconnecting, setReconnecting] = useState<Set<string>>(new Set());
@@ -127,11 +129,20 @@ export function McpServerList({ servers, onEdit, onDelete, runtimeStatus, active
         const isReconnecting = reconnecting.has(name);
         const isToggling = toggling.has(name);
 
+        const isDisabled = server.enabled === false;
+
         return (
-          <Card key={name}>
+          <Card key={name} className={isDisabled ? 'opacity-50' : undefined}>
             <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
               <div className="flex-1 min-w-0 mr-3">
                 <div className="flex items-center gap-2 mb-1">
+                  {onToggleEnabled && (
+                    <Switch
+                      size="sm"
+                      checked={!isDisabled}
+                      onCheckedChange={(checked) => onToggleEnabled(name, checked)}
+                    />
+                  )}
                   <typeInfo.icon size={16} className={`shrink-0 ${typeInfo.color}`} />
                   <CardTitle className="text-sm font-medium">{name}</CardTitle>
                   <Badge variant="outline" className="text-xs shrink-0">

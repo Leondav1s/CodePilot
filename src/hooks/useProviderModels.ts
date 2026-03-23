@@ -13,6 +13,10 @@ export interface UseProviderModelsReturn {
   currentProviderIdValue: string;
   modelOptions: typeof DEFAULT_MODEL_OPTIONS;
   currentModelOption: (typeof DEFAULT_MODEL_OPTIONS)[number];
+  /** Global default model (model value) */
+  globalDefaultModel: string | undefined;
+  /** Global default model's provider ID */
+  globalDefaultProvider: string | undefined;
 }
 
 export function useProviderModels(
@@ -21,8 +25,10 @@ export function useProviderModels(
 ): UseProviderModelsReturn {
   const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState<string>('');
+  const [globalDefaultModel, setGlobalDefaultModel] = useState<string | undefined>();
+  const [globalDefaultProvider, setGlobalDefaultProvider] = useState<string | undefined>();
 
-  const fetchProviderModels = useCallback(() => {
+  const fetchAll = useCallback(() => {
     fetch('/api/providers/models')
       .then((r) => r.json())
       .then((data) => {
@@ -47,18 +53,28 @@ export function useProviderModels(
         }]);
         setDefaultProviderId('');
       });
+
+    // Fetch global default model
+    fetch('/api/providers/options?providerId=__global__')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        setGlobalDefaultModel(data?.options?.default_model || undefined);
+        setGlobalDefaultProvider(data?.options?.default_model_provider || undefined);
+      })
+      .catch(() => {});
   }, []);
 
-  // Load models on mount and listen for provider changes
+  // Load on mount and listen for provider changes
   useEffect(() => {
-    fetchProviderModels();
-    const handler = () => fetchProviderModels();
+    fetchAll();
+    const handler = () => fetchAll();
     window.addEventListener('provider-changed', handler);
     return () => window.removeEventListener('provider-changed', handler);
-  }, [fetchProviderModels]);
+  }, [fetchAll]);
 
   // Derive flat model list for current provider
-  const currentProviderIdValue = providerId || defaultProviderId || (providerGroups[0]?.provider_id ?? '');
+  // Use globalDefaultProvider as fallback instead of the legacy default_provider_id
+  const currentProviderIdValue = providerId || globalDefaultProvider || defaultProviderId || (providerGroups[0]?.provider_id ?? '');
   const currentGroup = providerGroups.find(g => g.provider_id === currentProviderIdValue) || providerGroups[0];
   const modelOptions = (currentGroup?.models && currentGroup.models.length > 0)
     ? currentGroup.models
@@ -75,5 +91,7 @@ export function useProviderModels(
     currentProviderIdValue,
     modelOptions,
     currentModelOption,
+    globalDefaultModel,
+    globalDefaultProvider,
   };
 }

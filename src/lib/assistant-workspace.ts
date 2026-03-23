@@ -6,7 +6,8 @@ import { getLocalDateString } from '@/lib/utils';
 const DEFAULT_STATE: AssistantWorkspaceState = {
   onboardingComplete: false,
   lastCheckInDate: null,
-  schemaVersion: 3,
+  schemaVersion: 4,
+  dailyCheckInEnabled: false,
 };
 
 const STATE_DIR = '.assistant';
@@ -157,6 +158,28 @@ export function migrateStateV2ToV3(dir: string): void {
   }
 
   state.schemaVersion = 3;
+  saveState(dir, state);
+}
+
+/**
+ * v3→v4 migration: reset dailyCheckInEnabled to false for all users.
+ * Previously the default was implicitly "enabled" (undefined treated as true).
+ * Now the default is explicitly false — users must opt-in.
+ */
+export function migrateStateV3ToV4(dir: string): void {
+  let state: AssistantWorkspaceState;
+  try {
+    const statePath = path.join(dir, STATE_DIR, STATE_FILE);
+    const raw = fs.readFileSync(statePath, 'utf-8');
+    state = JSON.parse(raw) as AssistantWorkspaceState;
+  } catch {
+    return;
+  }
+
+  if (state.schemaVersion >= 4) return;
+
+  state.dailyCheckInEnabled = false;
+  state.schemaVersion = 4;
   saveState(dir, state);
 }
 
@@ -316,6 +339,7 @@ export function initializeWorkspace(dir: string): string[] {
     // Migrate existing state through all schema versions
     migrateStateV1ToV2(dir);
     migrateStateV2ToV3(dir);
+    migrateStateV3ToV4(dir);
   }
 
   // For existing directories, generate root docs and infer taxonomy
@@ -511,6 +535,10 @@ export function loadState(dir: string): AssistantWorkspaceState {
       migrateStateV2ToV3(dir);
       migrated = true;
     }
+    if (state.schemaVersion < 4) {
+      migrateStateV3ToV4(dir);
+      migrated = true;
+    }
     if (migrated) {
       return loadState(dir); // Reload after migration
     }
@@ -534,7 +562,7 @@ export function saveState(dir: string, state: AssistantWorkspaceState): void {
 
 export function needsDailyCheckIn(state: AssistantWorkspaceState, now?: Date): boolean {
   if (!state.onboardingComplete) return false;
-  if (state.dailyCheckInEnabled === false) return false;
+  if (state.dailyCheckInEnabled !== true) return false;
   const d = now ?? new Date();
   const localToday = getLocalDateString(d);
   if (state.lastCheckInDate === localToday) return false;
